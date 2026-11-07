@@ -18,6 +18,7 @@
 #include <QPushButton>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <algorithm>
 
 namespace aiws::gui {
 
@@ -96,40 +97,43 @@ void MainWindow::set_exit_callback(ExitCallback callback) noexcept {
     exit_callback_ = callback;
 }
 
+// MainWindow adds bool add_document_file(const QString& path);, which does exactly 
+// what Add Document does and returns false, changing nothing, if the file is unreadable, 
+// and void set_build_delay_ms(int ms_per_document);
 void MainWindow::add_document() {
     const QString path = QFileDialog::getOpenFileName(this, "Add Document", QString(), "Text files (*.txt);;All files (*)");
     if (path.isEmpty()) {
-        return;
+        return; // cancelled or no file selected
     }
+    add_document_file(path);
+}
 
-    // read the whole file
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, "Add Document", QString("Could not open %1.").arg(path));
-        status_label_->setText("Selected file could not be opened.");
-        return;
-    }
-    const QString text = QString::fromUtf8(file.readAll());
-
-    // ID is the absolute path and the title is the file name
+bool MainWindow::add_document_file(const QString& path) {  // everything from add_document() except the file dialog, so it can be called from M4
     const QFileInfo info(path);
-    const QString id = info.absoluteFilePath();
     const QString title = info.fileName();
-
-    // add backend 
-    try {
-        workspace_.add_document(Document(id.toStdString(), title.toStdString(), text.toStdString()));
-    } catch (const std::exception& e) {
-        QMessageBox::warning(this, "Add Document", QString::fromStdString(e.what()));
-        status_label_->setText("Document not added.");
-        return;
+    const std::string id = info.absoluteFilePath().toStdString();
+    
+    const std::vector<Document>& docs = workspace_.documents(); // the absolute path is the doc ID, so check for duplicates
+    if (std::any_of(docs.begin(), docs.end(), [&id](const Document& d) {return d.id() == id;})) {
+        status_label_ ->setText(QString("Document \"%1\" is already in the workspace.").arg(title));
+        return false; // nothing will change
     }
 
-    // list row i matches workspace document i
+    QFile file(info.absoluteFilePath());
+    if (!file.open(QIODevice::ReadOnly)) {
+        status_label_->setText(QString("Could not open document \"%1\".").arg(title));
+        return false; // document is unreadable, so nothing will change
+    }
+
+    workspace_.add_document(Document{id, title.toStdString(), file.readAll().toStdString()});
     workspace_widget_->add_document(title);
-    // old corpus should not match anymore
     invalidate_corpus();
-    status_label_->setText(QString("Added %1. Build corpus to process it.").arg(title));
+    status_label_->setText(QString("Added document \"%1\". Build corpus to include it").arg(title));
+    return true; 
+}
+
+void MainWindow::set_build_delay_ms(int ms_per_document) {
+    build_delay_ms_ = ms_per_document;
 }
 
 void MainWindow::build_corpus() {
