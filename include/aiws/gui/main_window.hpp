@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QtGlobal>
 
 #include "aiws/processing_core.hpp"
 #include "aiws/workspace.hpp"
@@ -16,6 +17,14 @@ class ContextWidget;
 class SearchWidget;
 class TermInspectorWidget;
 class WorkspaceWidget;
+
+// replace the bool with a state enum for the corpus state
+enum class CorpusState {
+    NotBuilt,   // has not been built yet after a startup or reset
+    Building,   // build of the workspace is running
+    Built,      // has been built and is currently matching the workspace
+    Stale       // workspace has been changed since the last build
+};
 
 /**
  * @brief Main application window and coordinator for the M3 AI Workspace GUI.
@@ -144,7 +153,10 @@ private:
 
     Workspace workspace_;
     ProcessingCore processing_core_;
-    bool corpus_current_{false};
+    // bool corpus_current_{false}; replacing this with the state enum for the corpus state
+    CorpusState corpus_state_{CorpusState::NotBuilt};
+    quint64 build_generation_{0}; // increments each time the corpus is rebuilt, Build, Add Document, or Reset is called and helps to ignore stale build results
+    int build_delay_ms_{0}; // copied into the build when it starts and used to delay the build of each doc in the workspace for simulating a slow build
     ExitCallback exit_callback_{nullptr};
 
     WorkspaceWidget* workspace_widget_{nullptr};

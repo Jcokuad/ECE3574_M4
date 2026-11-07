@@ -141,7 +141,8 @@ void MainWindow::build_corpus() {
         processing_core_.rebuild(workspace_);
     } catch (const std::exception& e) {
         // failed build if there is no valid corpus
-        corpus_current_ = false;
+        // corpus_current_ = false;
+        corpus_state_ = CorpusState::NotBuilt;
         workspace_widget_->set_corpus_status("Corpus: Not Built");
         clear_processing_outputs();
         update_action_states();
@@ -151,7 +152,8 @@ void MainWindow::build_corpus() {
     }
 
     // succesful build and the corpus matches the current workspace
-    corpus_current_ = true;
+    //corpus_current_ = true;
+    corpus_state_ = CorpusState::Built;
     const auto chunks = static_cast<qulonglong>(processing_core_.chunk_count());
     workspace_widget_->set_corpus_status(QString("Corpus: %1 chunks").arg(chunks));
     // invalidate old corpus output
@@ -174,7 +176,7 @@ void MainWindow::document_selected(int row) {
 void MainWindow::search_requested(const QString& query, int k) {
     // a good query has no leading or trailing spaces
     const QString g_query = query.trimmed();
-    if (!corpus_current_ || g_query.isEmpty()) {
+    if (corpus_state_ != CorpusState::Built || g_query.isEmpty()) {
         return; 
     }
 
@@ -200,7 +202,7 @@ void MainWindow::query_changed(const QString& query) {
 
 void MainWindow::build_context_requested(int token_budget) {
     const QString g_query = search_widget_->query().trimmed();
-    if (!corpus_current_ || g_query.isEmpty()) {
+    if (corpus_state_ != CorpusState::Built || g_query.isEmpty()) {
         return; 
     }
 
@@ -239,7 +241,7 @@ void MainWindow::source_document_requested(const QString& document_id) {
 void MainWindow::term_inspection_requested(const QString& term,
                                            const QString& chunk_id) {
     const QString g_term = term.trimmed();
-    if (!corpus_current_ || g_term.isEmpty()) {
+    if (corpus_state_ != CorpusState::Built || g_term.isEmpty()) {
         return; 
     }
 
@@ -262,7 +264,7 @@ void MainWindow::reset_application() {
     // backend first
     workspace_.clear();
     processing_core_ = ProcessingCore{};
-    corpus_current_ = false;
+    corpus_state_ = CorpusState::NotBuilt;
 
     // polymorphism
     Resettable* const components[] = {workspace_widget_, search_widget_, term_inspector_widget_, context_widget_};
@@ -286,16 +288,17 @@ void MainWindow::update_action_states() {
     const bool has_query = search_widget_->has_query();
 
     workspace_widget_->set_build_corpus_enabled(has_docs);
-    search_widget_->set_search_enabled(corpus_current_ && has_query);
-    term_inspector_widget_->set_inspection_enabled(corpus_current_);
-    context_widget_->set_build_context_enabled(corpus_current_ && has_query);
+    search_widget_->set_search_enabled(corpus_state_ == CorpusState::Built && has_query);
+    term_inspector_widget_->set_inspection_enabled(corpus_state_ == CorpusState::Built);
+    context_widget_->set_build_context_enabled(corpus_state_ == CorpusState::Built && has_query);
 }
 
 void MainWindow::invalidate_corpus() {
-    corpus_current_ = false;
-    workspace_widget_->set_corpus_status(processing_core_.chunk_count() == 0 
-                                            ? "Corpus: Not Built"
-                                            : "Corpus: Old Corpus (rebuild required)");
+    if (corpus_state_ != CorpusState::NotBuilt) {
+        corpus_state_ = CorpusState::Stale;
+        workspace_widget_->set_corpus_status("Corpus: Old Corpus (rebuild required)"); // check for stale corpus
+    }
+
     clear_processing_outputs();
     update_action_states();
 }
