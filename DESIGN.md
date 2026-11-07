@@ -6,7 +6,9 @@
 MainWindow has enum CorpusState corpus_state_ that has NotBuilt, Building, Built, and Stale instead of M3's bool corpus_current_. The previous bool could not say if the build is running or if a running build is out of date. The variable quint64 build_generation_ is a GUI thread only counter.
 
 ## Section (3) Changes since the checkpoint
-bool corpus_current_ was replaced with enum corpus_state.
+- bool corpus_current_ was replaced with enum corpus_state.
+- add_document_file() returns false and makes no changes if a file is unreadable and/or already in the workspace. The absolute path used is the doc ID, so a second one would cause rebuild() to throw on a duplicate ID. add_document is now only the dialog and cancelling it doesn't do anything.
+- set_build_delay_ms() forces negative values to 0. Running builds keep the same delay it started with. main.cpp rejects non-numeric or negative delay inputs.
 
 ## Section (4) CR-1 impact, meaning which functions changed and why the rest did not 
 
