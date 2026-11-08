@@ -1,6 +1,16 @@
 # M4 Decision Record
 
 ## Section (1) Threads and ownership, including the statement for constraint 5
+GUI thread has MainWindow, all widgets, SearchResultModel, and every public function of BuildRunner, which includes start, busy, cancel, take_result, shutdown, on_worker_done. Worker thread has BuildRunner::run() and the DelayedChunker it calls.
+
+BuildRunner owns only one thread (worker_) at a time, and start() refuses to allow another one to begin while worker_ is joinable. The run() function is a static function that receives a Workspace snapshot, the promise, its own chunking strategy and the generation. The completed ProcessingCore or the exception goes through std::promise<ProcessingCore> to std::future<ProcessingCore> result_.run() then posts it on on_worker_done() so the GUI only calls get() once the value is ready, which prevents blocking.
+
+DelayedChunker wraps the M1 Chunker and is installed through M2's three-argument ProcessingCore constructor, so the real build path is slowed. 
+
+The shared mutable data part of constraint 5:
+- The promise and future shared state
+- The cancel flag
+Everything else crosses threads by value, such as the Workspace snapshot, the delay, and the generation.
 
 ## Section (2) How a finished build is judged valid
 MainWindow has enum CorpusState corpus_state_ that has NotBuilt, Building, Built, and Stale instead of M3's bool corpus_current_. The previous bool could not say if the build is running or if a running build is out of date. The variable quint64 build_generation_ is a GUI thread only counter.
