@@ -65,6 +65,9 @@ WorkspaceWidget::WorkspaceWidget(QWidget* parent) : QWidget(parent) {
     connect(build_corpus_button_, &QPushButton::clicked, this, &WorkspaceWidget::build_corpus_requested);
     connect(document_list_, &QListWidget::currentRowChanged, this, &WorkspaceWidget::document_selected);
 
+    // object name change
+    corpus_status_label_->setObjectName("corpusStatusLabel");
+
     // start with nothing
     build_corpus_button_->setEnabled(false);
 }

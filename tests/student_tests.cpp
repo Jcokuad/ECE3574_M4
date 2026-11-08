@@ -11,6 +11,8 @@
 #include <QElapsedTimer>
 #include <QSignalSpy>
 #include <stdexcept>
+#include <QLabel>
+#include <QLineEdit>
 
 namespace {
 QString write_file(const QTemporaryDir& dir, const QString& name, const QByteArray& content) {
@@ -49,6 +51,19 @@ aiws::Workspace two_docs() {
     ws.add_document(aiws::Document{"j", "j", "jorts shirt"});
     return ws;
 }
+
+QLabel* corpus_status(QWidget& w) {
+    return w.findChild<QLabel*>("corpusStatusLabel");
+}
+
+QLineEdit* query_edit(QWidget& w) {
+    for (QLineEdit* i : w.findChildren<QLineEdit*>()) {
+        if (i->placeholderText() == "Search the current corpus") {
+            return i;
+        }
+    }
+    return nullptr;
+}
 }  // namespace
 
 class StudentTests : public QObject {
@@ -59,6 +74,8 @@ private slots:
     void runner_delivers_built_corpus(); 
     void runner_throws_failure();
     void runner_shutdown_does_not_wait();
+    void build_runs_off_gui_thread(); // build runs off the gui thread and becomes current
+    void discards_results_add_during_build(); 
 };
 
 void StudentTests::add_document_file_valid() {
@@ -121,6 +138,40 @@ void StudentTests::runner_shutdown_does_not_wait() {
     runner.shutdown();
     QVERIFY(timer.elapsed() < 1000);
     QVERIFY(!runner.busy());
+}
+
+void StudentTests::build_runs_off_gui_thread() {
+    QTemporaryDir dir;
+    aiws::gui::MainWindow window;
+    window.set_build_delay_ms(300);
+    QVERIFY(window.add_document_file(write_file(dir, "a.txt", "hello world")));
+    QVERIFY(window.add_document_file(write_file(dir, "b.txt", "jorts shirt")));
+    QPushButton* build = button(window, "Build Corpus");
+    QElapsedTimer timer;
+    timer.start();
+    build->click();
+    QVERIFY(timer.elapsed() < 200);
+    QVERIFY(!build->isEnabled());
+    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
+    QCOMPARE(corpus_status(window)->text(), QString("Corpus: 2 chunks"));
+    query_edit(window)->setText("alpha");
+    QVERIFY(button(window, "Search")->isEnabled());
+}
+
+void StudentTests::discards_results_add_during_build() {
+    QTemporaryDir dir;
+    aiws::gui::MainWindow window;
+    window.set_build_delay_ms(200);
+    QVERIFY(window.add_document_file(write_file(dir, "a.txt", "hello world")));
+    QPushButton* build = button(window, "Build Corpus");
+    build->click();
+    // build could not have delivered since no event loop has run yet
+    QVERIFY(window.add_document_file(write_file(dir, "b.txt", "jorts shirt")));
+    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
+    // old build finished and joined
+    QCOMPARE(corpus_status(window)->text(), QString("Corpus: Old Corpus (rebuild required)"));
+    query_edit(window)->setText("alpha");
+    QVERIFY(!button(window, "Search")->isEnabled());
 }
 
 // creates a QApplication since the target links Qt Widgets and the test uses Qt Widgets

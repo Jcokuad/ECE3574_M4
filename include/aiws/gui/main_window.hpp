@@ -17,6 +17,7 @@ class ContextWidget;
 class SearchWidget;
 class TermInspectorWidget;
 class WorkspaceWidget;
+class BuildRunner;
 
 // replace the bool with a state enum for the corpus state
 enum class CorpusState {
@@ -132,6 +133,8 @@ private slots:
      */
     void exit_application();
 
+    void on_build_finished(quint64 generation);
+
 private:
     /**
      * @brief Updates availability of actions that depend on current application state.
@@ -166,6 +169,7 @@ private:
     QLabel* status_label_{nullptr};
     QPushButton* reset_button_{nullptr};
     QPushButton* exit_button_{nullptr};
+    BuildRunner* build_runner_{nullptr};
 };
 
 }  // namespace aiws::gui

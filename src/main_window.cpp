@@ -7,6 +7,7 @@
 #include "aiws/gui/term_inspector_widget.hpp"
 #include "aiws/gui/workspace_widget.hpp"
 #include "aiws/gui/search_widget.hpp"
+#include "aiws/gui/build_runner.hpp"
 
 #include <QFile>
 #include <QFileDialog>
@@ -89,6 +90,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(reset_button_, &QPushButton::clicked, this, &MainWindow::reset_application);
     connect(exit_button_, &QPushButton::clicked, this, &MainWindow::exit_application);
 
+    // create the runner
+    build_runner_ = new BuildRunner(this);
+    connect(build_runner_, &BuildRunner::build_finished, this, &MainWindow::on_build_finished);
+    status_label_->setObjectName("statusLabel");
+
     // startup
     update_action_states();
 }
@@ -137,33 +143,23 @@ void MainWindow::set_build_delay_ms(int ms_per_document) {
 }
 
 void MainWindow::build_corpus() {
-    if (workspace_.documents().empty()) {
+    if (workspace_.documents().empty() || build_runner_->busy()) {
         return;
     }
 
-    try {
-        processing_core_.rebuild(workspace_);
-    } catch (const std::exception& e) {
-        // failed build if there is no valid corpus
-        // corpus_current_ = false;
-        corpus_state_ = CorpusState::NotBuilt;
-        workspace_widget_->set_corpus_status("Corpus: Not Built");
-        clear_processing_outputs();
-        update_action_states();
-        QMessageBox::warning(this, "Build Corpus", QString::fromStdString(e.what()));
-        status_label_->setText("Corpus Build Failed");
+    build_generation_++; // this build's ticket
+
+    // workspace_ is copied here on the GUI thread and the worker gets the copy
+    if (!build_runner_->start(build_generation_, workspace_, build_delay_ms_)) {
         return;
     }
-
-    // succesful build and the corpus matches the current workspace
-    //corpus_current_ = true;
-    corpus_state_ = CorpusState::Built;
-    const auto chunks = static_cast<qulonglong>(processing_core_.chunk_count());
-    workspace_widget_->set_corpus_status(QString("Corpus: %1 chunks").arg(chunks));
-    // invalidate old corpus output
+    corpus_state_ = CorpusState::Building;
     clear_processing_outputs();
+    workspace_widget_->set_corpus_status("Building...");
+    status_label_->setText(QString("Now building corpus from %1 document(s)...")
+        .arg(static_cast<qulonglong>(workspace_.documents().size())));
+    
     update_action_states();
-    status_label_->setText(QString("Corpus built: %1 chunks.").arg(chunks));
 }
 
 void MainWindow::document_selected(int row) {
@@ -291,7 +287,7 @@ void MainWindow::update_action_states() {
     const bool has_docs = !workspace_.documents().empty();
     const bool has_query = search_widget_->has_query();
 
-    workspace_widget_->set_build_corpus_enabled(has_docs);
+    workspace_widget_->set_build_corpus_enabled(has_docs && !build_runner_->busy());  // second build can't start while a thread exists
     search_widget_->set_search_enabled(corpus_state_ == CorpusState::Built && has_query);
     term_inspector_widget_->set_inspection_enabled(corpus_state_ == CorpusState::Built);
     context_widget_->set_build_context_enabled(corpus_state_ == CorpusState::Built && has_query);
@@ -302,6 +298,9 @@ void MainWindow::invalidate_corpus() {
         corpus_state_ = CorpusState::Stale;
         workspace_widget_->set_corpus_status("Corpus: Old Corpus (rebuild required)"); // check for stale corpus
     }
+    
+    build_generation_++; 
+    build_runner_->cancel();
 
     clear_processing_outputs();
     update_action_states();
@@ -313,6 +312,32 @@ void MainWindow::clear_processing_outputs() {
     term_inspector_widget_->set_selected_chunk(QString());
     term_inspector_widget_->clear_statistics();
     context_widget_->clear_context();
+}
+
+void MainWindow::on_build_finished(quint64 generation) {
+    // valid only if nothing has changed the workspace since the build started
+    const bool valid = (generation == build_generation_);
+
+    try {
+        ProcessingCore built = build_runner_->take_result(); // or rethrows
+
+        if (valid) {
+            processing_core_ = std::move(built); // moves and destroys prev corpus
+            corpus_state_ = CorpusState::Built;
+            const auto chunks = static_cast<qulonglong>(processing_core_.chunk_count());
+            workspace_widget_->set_corpus_status(QString("Corpus: %1 chunks").arg(chunks));
+            status_label_->setText(QString("Corpus built: %1 chunks.").arg(chunks));
+        }
+        // if not valid built is destroyed at the end of block
+    } catch (const std::exception& error) {
+        if (valid) { // cancelled or outdated build is not reported as a failure
+            corpus_state_ = CorpusState::Stale;
+            workspace_widget_->set_corpus_status("Build has failed");
+            status_label_->setText(QString("Build has failed: %1")
+                .arg(error.what()));
+        }
+    }
+    update_action_states();
 }
 
 }  // namespace aiws::gui
