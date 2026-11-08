@@ -15,6 +15,8 @@ Everything else crosses threads by value, such as the Workspace snapshot, the de
 ## Section (2) How a finished build is judged valid
 MainWindow has enum CorpusState corpus_state_ that has NotBuilt, Building, Built, and Stale instead of M3's bool corpus_current_. The previous bool could not say if the build is running or if a running build is out of date. The variable quint64 build_generation_ is a GUI thread only counter.
 
+MainWindow::on_build_finished(generation) is the only place a corpus can become current. This is done by first computing valid by comparing generation ot build_generation, then if it is valid and take_result() returns, processing_core_ is move assigned, the state becomes current, and the chunk count is shown. If it is not valid, the result or exception is discarded and nothing changes. Build Corpus is disabled while BuildRunner::busy() so only one worker_ exists at a time.
+
 ## Section (3) Changes since the checkpoint
 - bool corpus_current_ was replaced with enum corpus_state.
 - add_document_file() returns false and makes no changes if a file is unreadable and/or already in the workspace. The absolute path used is the doc ID, so a second one would cause rebuild() to throw on a duplicate ID. add_document is now only the dialog and cancelling it doesn't do anything.
