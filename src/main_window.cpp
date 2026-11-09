@@ -8,6 +8,7 @@
 #include "aiws/gui/workspace_widget.hpp"
 #include "aiws/gui/search_widget.hpp"
 #include "aiws/gui/build_runner.hpp"
+#include "aiws/gui/ipc_server.hpp"
 
 #include <QFile>
 #include <QFileDialog>
@@ -101,6 +102,25 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
 MainWindow::~MainWindow() {
     build_runner_->shutdown(); // stop and join the worker bedore any member or child is destroyed
+    if (ipc_server_) {
+        ipc_server_->stop(); // E4
+    }
+}
+
+bool MainWindow::start_ipc_server(const QString& socket_path, Qstring* error) {
+    ipc_server_ = std::make_unique<IpcServer>(this);
+    std::string message;
+    if (!ipc_server_->start(socket_path.toStdString(), &message)) {
+        ipc_server_.reset();
+        if (error != nullptr) *error = QString::fromStdString(message);
+        return false;
+    }
+    return true;
+}
+
+void MainWindow::remote_add_requested(const QString& path) {
+    // GUI thread
+    add_document_file(path);
 }
 
 void MainWindow::set_exit_callback(ExitCallback callback) noexcept {

@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 #include <QtGlobal>
+#include <memory>
 
 #include "aiws/processing_core.hpp"
 #include "aiws/workspace.hpp"
@@ -18,6 +19,7 @@ class SearchWidget;
 class TermInspectorWidget;
 class WorkspaceWidget;
 class BuildRunner;
+class IpcServer
 
 // replace the bool with a state enum for the corpus state
 enum class CorpusState {
@@ -56,6 +58,10 @@ public:
 
     // destructor
     ~MainWindow() override; // stops and joins the build thread
+
+    // CR-1, serve aiws_send on socket_path and returns false if socket can't be set up
+    bool start_ipc_server(const QString& socket_path, QString* error == nullptr);
+
 
     /**
      * @brief Registers the callback invoked when the user requests Exit.
@@ -138,6 +144,8 @@ private slots:
 
     void on_build_finished(quint64 generation);
 
+    void remote_add_requested(const QString& path); // posted by IpcServer's thread
+
 private:
     /**
      * @brief Updates availability of actions that depend on current application state.
@@ -156,6 +164,8 @@ private:
      * @brief Clears displayed search and context output that depends on processing state.
      */
     void clear_processing_outputs();
+
+    std::unique_ptr<IpcServer> ipc_server_;
 
     Workspace workspace_;
     ProcessingCore processing_core_;
