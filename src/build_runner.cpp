@@ -73,6 +73,9 @@ void BuildRunner::run(BuildRunner* notify, std::promise<ProcessingCore> promise,
         promise.set_value(std::move(core));
     } catch (...) {
         promise.set_exception(std::current_exception());
+#ifdef AIWS_FAULT_LOSE_FAILURE
+        return; // FAULT R3, the failure never reaches the GUI, which stays in Building
+#endif
     } 
     QMetaObject::invokeMethod(notify, "on_worker_done", Qt::QueuedConnection, Q_ARG(quint64, generation));
 }

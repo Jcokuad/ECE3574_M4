@@ -323,7 +323,12 @@ void MainWindow::clear_processing_outputs() {
 
 void MainWindow::on_build_finished(quint64 generation) {
     // valid only if nothing has changed the workspace since the build started
+#ifdef AIWS_FAULT_ACCEPT_STALE
+    const bool valid = true; // FAULT R2, accept even after add document or reset
+    Q_UNUSED(generation);
+#else
     const bool valid = (generation == build_generation_);
+#endif
 
     try {
         ProcessingCore built = build_runner_->take_result(); // or rethrows
