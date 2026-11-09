@@ -12,6 +12,18 @@ The shared mutable data part of constraint 5:
 - The cancel flag
 Everything else crosses threads by value, such as the Workspace snapshot, the delay, and the generation.
 
+Lifecycle:
+- MainWindow::~MainWindow() calls build_runner_->shutdown() first. It sets the cancel flag first then joins. 
+- Reset_application() replaces processing_core_ with ProcessingCore{} instead of M3's rebuild on the BUI thread
+- Repeated builds change with at most one thread existsing and none accumulating. BuildRunner::start() refuses while busy.
+
+Ownership Path of a Corpus:
+1) run(), where worker constructs a local ProcessingCore
+2) rebuild(snapshot), where promise.set_value(std::move(core)) moves it to the promise/future shared state
+3) on_build_finished(), where the GUI calls take_result() to moves it out with future.get()
+4) Valid check
+5) Accepted corpus lives until the next accepted build
+
 ## Section (2) How a finished build is judged valid
 MainWindow has enum CorpusState corpus_state_ that has NotBuilt, Building, Built, and Stale instead of M3's bool corpus_current_. The previous bool could not say if the build is running or if a running build is out of date. The variable quint64 build_generation_ is a GUI thread only counter.
 
@@ -25,5 +37,10 @@ MainWindow::on_build_finished(generation) is the only place a corpus can become 
 ## Section (4) CR-1 impact, meaning which functions changed and why the rest did not 
 
 ## Section (5) Where each fault switch is and which test catches it
+AIWS_FAULT_ACCEPT_STALE
+It was placed in MainWindow::on_build_finished() in the line that computes valid. The defect makes it so that valid is always true, which would make outdated builds still accepted after Add Document or Reset. It's caught by my test called discards_results_add_during_build(), and the corpus label shows a chunk count or "Build failed" instead of the line "Out of date (rebuild required)". 
+
+AIWS_FAULT_LOSE_FAILURE
+It was placed in the catch block of BuildRunner::run(). The defect makes it so that after set_exception(), run() returns without posting on_worker_done(), so the GUI never leaves Building. It was caught by my test called runner_throws_failure().
 
 ## Section (6) AI-use disclosure 
