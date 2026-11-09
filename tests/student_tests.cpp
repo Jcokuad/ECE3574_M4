@@ -2,6 +2,7 @@
 
 #include "aiws/gui/main_window.hpp"
 #include "aiws/gui/build_runner.hpp"
+#include "aiws/ipc_protocol.hpp"
 
 #include <QFile>
 #include <QListWidget>
@@ -13,6 +14,9 @@
 #include <stdexcept>
 #include <QLabel>
 #include <QLineEdit>
+#include <QProcess>
+#include <QThread>
+#include <memory>
 
 namespace {
 QString write_file(const QTemporaryDir& dir, const QString& name, const QByteArray& content) {
@@ -69,6 +73,35 @@ int exit_requests = 0;
 void record_exit(QWidget*) {
     exit_requests++;
 }
+
+namespace ipc = aiws::ipc;
+
+struct Reply { 
+    int status{-1}; 
+    std::string reason; 
+};
+
+Reply send_frame(const QString& socket, const std::string& frame, std::size_t piece = 4096, int pause_ms = 0) {
+    Reply reply;
+    sockaddr_un address {};
+    if (!ipc::make_address(socket.toStdString(), address)) return reply;
+    ipc::UniqueFd fd(::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0));
+    if (::connect(fd.get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0) {
+        return reply;
+    }
+    const auto deadline = ipc::Clock::now() + std::chrono::seconds(5);
+    for (std::size_t off = 0; off < frame.size(); off += piece) {
+        const std::size_t n = std::min(piece, frame.size() - off);
+        if (ipc::write_all(fd.get(), frame.data() + off, n, deadline) != ipc::IoResult::Ok) return reply;
+        if (pause_ms > 0) QThread::msleep(pause_ms);
+    }
+    char header[5];
+    if (ipc::read_exact(fd.get(), header, 5, deadline) != ipc::IoResult::Ok) return reply;
+    reply.reason.resize(ipc::get_u32_be(header + 1));
+    if (!reply.reason.empty()) ipc::read_exact(fd.get(), &reply.reason[0], reply.reason.size(), deadline);
+    reply.status = static_cast<unsigned char>(header[0]);
+    return reply;
+}
 }  // namespace
 
 class StudentTests : public QObject {
@@ -82,6 +115,11 @@ private slots:
     void build_runs_off_gui_thread(); // build runs off the gui thread and becomes current
     void discards_results_add_during_build(); 
     void exit_and_rejoin(); // exited and repeated builds keep working
+    void ipc_add_odd_path_in_pieces(); // E1, E2, E3
+    // void ipc_add_during_build_stale_corpus() // E1 with R2
+    // void ipc_reject_bad_requests() 
+    // void aiws_send_exit_codes() // E1
+    // void ipc_stops_and_removes_socket() // E4
 };
 
 void StudentTests::add_document_file_valid() {
@@ -113,7 +151,7 @@ void StudentTests::runner_delivers_built_corpus() {
     QSignalSpy finished(&runner, &aiws::gui::BuildRunner::build_finished);
     QVERIFY(runner.start(7, two_docs(), 0));
     QVERIFY(!runner.start(8, two_docs(), 0)); // only one worker allowed at a time
-    QVERIFY(finished.wait(5000));
+    QVERIFY(finished.wait(2000));
     QCOMPARE(finished.first().first().value<quint64>(), quint64{7});
     QVERIFY(!runner.busy()); // joined before signal
     QCOMPARE(runner.take_result().chunk_count(), std::size_t{2});
@@ -125,7 +163,7 @@ void StudentTests::runner_throws_failure() {
     runner.set_chunker_factory(&make_failing_chunker);
     QSignalSpy finished(&runner, &aiws::gui::BuildRunner::build_finished);
     QVERIFY(runner.start(1, two_docs(), 0));
-    QVERIFY(finished.wait(5000)); // lost failure does not come and fails after 5s
+    QVERIFY(finished.wait(2000)); // lost failure does not come and fails after 5s
     bool threw = false;
     try {
         runner.take_result();
@@ -158,7 +196,7 @@ void StudentTests::build_runs_off_gui_thread() {
     build->click();
     QVERIFY(timer.elapsed() < 200);
     QVERIFY(!build->isEnabled());
-    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 2000);
     QLabel* status = corpus_status(window);
     QVERIFY2(status != nullptr, "no qlabel with object name corpusStatusLabel");
     QCOMPARE(corpus_status(window)->text(), QString("Corpus: 2 chunks"));
@@ -181,7 +219,7 @@ void StudentTests::discards_results_add_during_build() {
     build->click();
     // build could not have delivered since no event loop has run yet
     QVERIFY(window.add_document_file(write_file(dir, "b.txt", "jorts shirt")));
-    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 2000);
     // old build finished and joined
     QCOMPARE(corpus_status(window)->text(), QString("Corpus: Old Corpus (rebuild required)"));
     query_edit(window)->setText("alpha");
@@ -196,15 +234,44 @@ void StudentTests::exit_and_rejoin() {
     QPushButton* build = button(window, "Build Corpus");
     for (int i = 0; i < 5; i++) {  // each thread is joined before the next starts
         build->click();
-        QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 2000);
         QCOMPARE(corpus_status(window)->text(), QString("Corpus: 1 chunks"));
     }
     exit_requests = 0;
     build->click();
     button(window, "Exit")->click(); // exit during a build asks the callback
     QCOMPARE(exit_requests, 1);
-    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 2000);
 }
+
+void StudentTests::ipc_add_odd_path_in_pieces() {// E1, E2, E3
+    QTemporaryDir dir;
+    aiws::gui::MainWindow window;
+    const QString socket = dir.filePath("s.sock");
+    QVERIFY(window.start_ipc_server(socket));
+    const QString path = write_file(dir, QString::fromUtf8("my file é\nline.txt"), "hello world");
+    // 3 bytes at a time, 20 ms apart. The test thread sleeps, so the reply
+    // arriving also proves it never waited for the GUI thread.
+    const Reply reply = send_frame(socket, ipc::encode_request(ipc::kOpAdd, path.toStdString()), 3, 20);
+    QCOMPARE(reply.status, 0);
+    QListWidget* list = window.findChild<QListWidget*>();
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->count(), 1);
+    QCOMPARE(list->item(0)->text(), QString::fromUtf8("my file é\nline.txt"));
+}
+// void ipc_add_during_build_stale_corpus() {// E1 with R2
+
+// }
+// void ipc_reject_bad_requests() {
+
+
+// }
+// void aiws_send_exit_codes() {// E1
+
+// }
+// void ipc_stops_and_removes_socket() {// E4
+
+// }
 
 // creates a QApplication since the target links Qt Widgets and the test uses Qt Widgets
 QTEST_MAIN(StudentTests)

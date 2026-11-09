@@ -107,7 +107,7 @@ MainWindow::~MainWindow() {
     }
 }
 
-bool MainWindow::start_ipc_server(const QString& socket_path, Qstring* error) {
+bool MainWindow::start_ipc_server(const QString& socket_path, QString* error) {
     ipc_server_ = std::make_unique<IpcServer>(this);
     std::string message;
     if (!ipc_server_->start(socket_path.toStdString(), &message)) {
@@ -208,8 +208,7 @@ void MainWindow::search_requested(const QString& query, int k) {
     try {
         results = processing_core_.search(g_query.toStdString(), k);
     } catch (const std::exception& e) {
-        QMessageBox::warning(this, "Search", QString::fromStdString(e.what()));
-        status_label_->setText("Search failed.");
+        status_label_->setText(QString("Search failed: %1").arg(e.what()));
         return;
     }
 
@@ -235,8 +234,7 @@ void MainWindow::build_context_requested(int token_budget) {
         items = processing_core_.build_context(g_query.toStdString(), search_widget_->result_count(),
                                                 static_cast<std::size_t>(token_budget));
     } catch (const std::exception& e) {
-        QMessageBox::warning(this, "Build Context", QString::fromStdString(e.what()));
-        status_label_->setText("Context Build Failed");
+        status_label_->setText(QString("Context Build Failed: %1").arg(e.what()));
         return;
     }
 
@@ -279,8 +277,8 @@ void MainWindow::term_inspection_requested(const QString& term,
         term_inspector_widget_->set_statistics(df, has_chunk, tf);
         status_label_->setText(QString("Inspected term \"%1\".").arg(g_term));
     } catch (const std::exception& e) {
-        QMessageBox::warning(this, "Inspect Term", QString::fromStdString(e.what()));
-        status_label_->setText("Term Inspection Failed");
+        term_inspector_widget_->clear_statistics();
+        status_label_->setText(QString("Term Inspection Failed: %1").arg(e.what()));
     }
 }
 

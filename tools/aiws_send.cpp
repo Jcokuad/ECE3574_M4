@@ -76,7 +76,13 @@ int main(int argc, char* argv[]) {
     char header[5];
     if (ipc::write_all(fd.get(), request.data(), request.size(), deadline) != ipc::IoResult::Ok ||
         ipc::read_exact(fd.get(), header, sizeof(header), deadline) != ipc::IoResult::Ok) {
-        std::cerr << "aiws_send: communication witht he application failed\n";
+        std::cerr << "aiws_send: communication with the application failed\n";
+        return kFailed;
+    }
+    const auto status = static_cast<std::uint8_t>(header[0]); // byte 0
+    const std::uint32_t length = ipc::get_u32_be(header + 1); // bytes 1-4
+    if (length > ipc::kMaxMessage) {
+        std::cerr << "aiws_send: malformed reply\n";
         return kFailed;
     }
     std::string reason(length, '\0');

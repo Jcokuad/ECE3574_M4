@@ -29,7 +29,7 @@ inline std::string default_socket_path() {
     if (user != nullptr && *user != '\0') {
         return std::string("/tmp/aiws-") + user + ".sock";
     }
-    return "/tmp/aiws-" + std::string(::getuid()) + ".sock";
+    return "/tmp/aiws-" + std::to_string(::getuid()) + ".sock";
 }
 
 // Big-endian by shifting
@@ -42,7 +42,7 @@ inline void put_u32_be(std::string& out, std::uint32_t value) {
 
 inline std::uint32_t get_u32_be(const char* bytes) {
     const auto b = [bytes](int j) {
-        return static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[i]));
+        return static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[j]));
     };
     return (b(0) << 24) | (b(1) << 16) | (b(2) << 8) | b(3);
 }
@@ -74,7 +74,7 @@ inline bool make_address(const std::string& path, sockaddr_un& address) {
     return true;
 }
 
-enum classs IoResult {
+enum class IoResult {
     Ok, 
     Timeout,
     Closed,
@@ -117,7 +117,7 @@ inline IoResult read_exact(int fd, char* buffer, std::size_t n, Clock::time_poin
             return IoResult::Closed;
         }
         if (rc < 0) {
-            if (errno == EINTR || errno = EAGAIN || errno == EWOULDBLOCK) continue;
+            if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
             return IoResult::Error;
         }
         got += static_cast<std::size_t>(rc);
@@ -147,10 +147,10 @@ public:
     UniqueFd() = default;
     explicit UniqueFd(int fd) noexcept : fd_(fd) {}
     ~UniqueFd() { reset(); }
-    UniqueFd(UniqueFd&& other) noexcept : fd_(other.released()) {}
+    UniqueFd(UniqueFd&& other) noexcept : fd_(other.release()) {}
     UniqueFd& operator=(UniqueFd&& other) noexcept {
         if (this != &other) reset(other.release());
-        return this*;
+        return *this;
     }
     UniqueFd(const UniqueFd&) = delete;
     UniqueFd& operator=(const UniqueFd&) = delete;

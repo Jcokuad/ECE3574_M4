@@ -15,11 +15,13 @@
 
 namespace aiws::gui {
 
+namespace {
+
 std::string check_readable_file(const std::string& path) {
     const ipc::UniqueFd fd(::open(path.c_str(), O_RDONLY | O_CLOEXEC));
     if (!fd.valid()) return std::string("Cannot open file: ") + std::strerror(errno);
     struct stat info {};
-    if (""fstat(fd.get(), &info) != 0 || !S_ISREG(info.st_mode)) return "not a regular file";
+    if (::fstat(fd.get(), &info) != 0 || !S_ISREG(info.st_mode)) return "not a regular file";
     return {};
 }
 
@@ -39,7 +41,7 @@ bool IpcServer::start(const std::string& socket_path, std::string* error) {
     if (!ipc::make_address(socket_path, address)) return fail("socket path too long or empty");
 
     ipc::UniqueFd fd(::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0));
-    if !fd.valid() return fail(std::string("socket: ") + std::strerror(errno));
+    if (!fd.valid()) return fail(std::string("socket: ") + std::strerror(errno));
 
     ::unlink(socket_path.c_str()); // stale file from a crashed run would make bind() fail
     if (::bind(fd.get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0) {
@@ -104,7 +106,7 @@ void IpcServer::handle_client(int client_fd) {
     }
     const auto opcode = static_cast<std::uint8_t>(body[0]);
     if (opcode != ipc::kOpAdd) {
-        reply(ipc::kStatusRejected, "unkown request type");
+        reply(ipc::kStatusRejected, "unknown request type");
         return;
     }
 
@@ -124,5 +126,8 @@ void IpcServer::handle_client(int client_fd) {
     reply(ipc::kStatusOk, {});
 
     // then hand the path to the GUI thread, which adds it in the same way as Add Document does for E1
-    QMetaObject::invokeMethod(receiver_, "remote_add_requested", Qt::queued)
+    QMetaObject::invokeMethod(receiver_, "remote_add_requested", Qt::QueuedConnection, Q_ARG(QString, QString::fromUtf8(path.data(), 
+                                static_cast<int>(path.size()))));
 }
+
+} // namespace aiws::gui

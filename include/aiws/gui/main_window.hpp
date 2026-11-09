@@ -19,7 +19,7 @@ class SearchWidget;
 class TermInspectorWidget;
 class WorkspaceWidget;
 class BuildRunner;
-class IpcServer
+class IpcServer;
 
 // replace the bool with a state enum for the corpus state
 enum class CorpusState {
@@ -60,7 +60,7 @@ public:
     ~MainWindow() override; // stops and joins the build thread
 
     // CR-1, serve aiws_send on socket_path and returns false if socket can't be set up
-    bool start_ipc_server(const QString& socket_path, QString* error == nullptr);
+    bool start_ipc_server(const QString& socket_path, QString* error = nullptr);
 
 
     /**
