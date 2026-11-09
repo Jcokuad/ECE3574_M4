@@ -58,11 +58,16 @@ QLabel* corpus_status(QWidget& w) {
 
 QLineEdit* query_edit(QWidget& w) {
     for (QLineEdit* i : w.findChildren<QLineEdit*>()) {
-        if (i->placeholderText() == "Search the current corpus") {
+        if (i->placeholderText() == "Enter a query") {
             return i;
         }
     }
     return nullptr;
+}
+
+int exit_requests = 0;
+void record_exit(QWidget*) {
+    exit_requests++;
 }
 }  // namespace
 
@@ -76,6 +81,7 @@ private slots:
     void runner_shutdown_does_not_wait();
     void build_runs_off_gui_thread(); // build runs off the gui thread and becomes current
     void discards_results_add_during_build(); 
+    void exit_and_rejoin(); // exited and repeated builds keep working
 };
 
 void StudentTests::add_document_file_valid() {
@@ -153,9 +159,17 @@ void StudentTests::build_runs_off_gui_thread() {
     QVERIFY(timer.elapsed() < 200);
     QVERIFY(!build->isEnabled());
     QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
+    QLabel* status = corpus_status(window);
+    QVERIFY2(status != nullptr, "no qlabel with object name corpusStatusLabel");
     QCOMPARE(corpus_status(window)->text(), QString("Corpus: 2 chunks"));
-    query_edit(window)->setText("alpha");
-    QVERIFY(button(window, "Search")->isEnabled());
+
+    QLineEdit* query = query_edit(window);
+    QVERIFY2(query != nullptr, "no qlinedit placeholder");
+    query->setText("hello");
+
+    QPushButton* search = button(window, "Search");
+    QVERIFY2(search != nullptr, "no search button");
+    QVERIFY(search->isEnabled());
 }
 
 void StudentTests::discards_results_add_during_build() {
@@ -172,6 +186,24 @@ void StudentTests::discards_results_add_during_build() {
     QCOMPARE(corpus_status(window)->text(), QString("Corpus: Old Corpus (rebuild required)"));
     query_edit(window)->setText("alpha");
     QVERIFY(!button(window, "Search")->isEnabled());
+}
+
+void StudentTests::exit_and_rejoin() {
+    QTemporaryDir dir;
+    aiws::gui::MainWindow window;
+    window.set_exit_callback(&record_exit);
+    QVERIFY(window.add_document_file(write_file(dir, "a.txt", "hello world")));
+    QPushButton* build = button(window, "Build Corpus");
+    for (int i = 0; i < 5; i++) {  // each thread is joined before the next starts
+        build->click();
+        QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
+        QCOMPARE(corpus_status(window)->text(), QString("Corpus: 1 chunks"));
+    }
+    exit_requests = 0;
+    build->click();
+    button(window, "Exit")->click(); // exit during a build asks the callback
+    QCOMPARE(exit_requests, 1);
+    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
 }
 
 // creates a QApplication since the target links Qt Widgets and the test uses Qt Widgets

@@ -99,6 +99,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     update_action_states();
 }
 
+MainWindow::~MainWindow() {
+    build_runner_->shutdown(); // stop and join the worker bedore any member or child is destroyed
+}
+
 void MainWindow::set_exit_callback(ExitCallback callback) noexcept {
     exit_callback_ = callback;
 }
@@ -260,7 +264,10 @@ void MainWindow::term_inspection_requested(const QString& term,
     }
 }
 
+// std::thread that is destroyed while still joinable calls std::terminate to keep Exit from crashing
 void MainWindow::reset_application() {
+    build_generation_++;
+    build_runner_->cancel(); // stops early and on_build_finished() discards it
     // backend first
     workspace_.clear();
     processing_core_ = ProcessingCore{};
@@ -272,8 +279,8 @@ void MainWindow::reset_application() {
         component->reset();
     }
 
-    update_action_states();
     status_label_->setText("Application reset.");
+    update_action_states();
 }
 
 void MainWindow::exit_application() {
