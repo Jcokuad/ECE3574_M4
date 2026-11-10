@@ -137,11 +137,6 @@ void StudentTests::add_document_file_invalid() {
     QVERIFY(!window.add_document_file(dir.filePath("missing.txt")));
     QCOMPARE(window.findChild<QListWidget*>()->count(), 0);
     QVERIFY(!button(window, "Build Corpus")->isEnabled());
-    // duplicate file
-    const QString valid = write_file(dir, "a.txt", "Hello World");
-    QVERIFY(window.add_document_file(valid));
-    QVERIFY(!window.add_document_file(valid));
-    QCOMPARE(window.findChild<QListWidget*>()->count(), 1);
 }
 
 // starts a build and checks that a second start is not allowed

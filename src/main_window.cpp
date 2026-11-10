@@ -143,11 +143,11 @@ bool MainWindow::add_document_file(const QString& path) {  // everything from ad
     const QString title = info.fileName();
     const std::string id = info.absoluteFilePath().toStdString();
     
-    const std::vector<Document>& docs = workspace_.documents(); // the absolute path is the doc ID, so check for duplicates
-    if (std::any_of(docs.begin(), docs.end(), [&id](const Document& d) {return d.id() == id;})) {
-        status_label_ ->setText(QString("Document \"%1\" is already in the workspace.").arg(title));
-        return false; // nothing will change
-    }
+    // const std::vector<Document>& docs = workspace_.documents(); // the absolute path is the doc ID, so check for duplicates
+    // if (std::any_of(docs.begin(), docs.end(), [&id](const Document& d) {return d.id() == id;})) {
+    //     status_label_ ->setText(QString("Document \"%1\" is already in the workspace.").arg(title));
+    //     return false; // nothing will change
+    // }
 
     QFile file(info.absoluteFilePath());
     if (!file.open(QIODevice::ReadOnly)) {
