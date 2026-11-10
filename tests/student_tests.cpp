@@ -116,10 +116,10 @@ private slots:
     void discards_results_add_during_build(); 
     void exit_and_rejoin(); // exited and repeated builds keep working
     void ipc_add_odd_path_in_pieces(); // E1, E2, E3
-    // void ipc_add_during_build_stale_corpus() // E1 with R2
-    // void ipc_reject_bad_requests() 
-    // void aiws_send_exit_codes() // E1
-    // void ipc_stops_and_removes_socket() // E4
+    void ipc_add_during_build_stale_corpus(); // E1 with R2
+    void ipc_reject_bad_requests(); 
+    void aiws_send_exit_codes(); // E1
+    void ipc_stops_and_removes_socket(); // E4
 };
 
 void StudentTests::add_document_file_valid() {
@@ -259,19 +259,85 @@ void StudentTests::ipc_add_odd_path_in_pieces() {// E1, E2, E3
     QTRY_COMPARE(list->count(), 1);
     QCOMPARE(list->item(0)->text(), QString::fromUtf8("my file é\nline.txt"));
 }
-// void ipc_add_during_build_stale_corpus() {// E1 with R2
 
-// }
-// void ipc_reject_bad_requests() {
+void StudentTests::ipc_add_during_build_stale_corpus() {// E1 with R2
+    QTemporaryDir dir;
+    aiws::gui::MainWindow window;
+    const QString socket = dir.filePath("s.sock");
+    QVERIFY(window.start_ipc_server(socket));
+    window.set_build_delay_ms(200);
+    QVERIFY(window.add_document_file(write_file(dir, "a.txt", "hello world")));
+    QPushButton* build = button(window, "Build Corpus");
+    QVERIFY(build != nullptr);
+    build->click();
+    const QString b = write_file(dir, "b.txt", "jorts shirt");
+    QCOMPARE(send_frame(socket, ipc::encode_request(ipc::kOpAdd, b.toStdString())).status, 0);
+    QTRY_VERIFY_WITH_TIMEOUT(build->isEnabled(), 5000);
+    QLabel* status = corpus_status(window);
+    QVERIFY(status != nullptr);
+    QCOMPARE(status->text(), QString("Corpus: Old Corpus (rebuild required)"));
 
+}
 
-// }
-// void aiws_send_exit_codes() {// E1
+void StudentTests::ipc_reject_bad_requests() {
+    QTemporaryDir dir;
+    aiws::gui::MainWindow window;
+    const QString socket = dir.filePath("s.sock");
+    QVERIFY(window.start_ipc_server(socket));
+    const Reply missing = send_frame(socket, ipc::encode_request(ipc::kOpAdd, dir.filePath("missing.txt").toStdString()));
 
-// }
-// void ipc_stops_and_removes_socket() {// E4
+    QCOMPARE(missing.status, 1);
+    QVERIFY(!missing.reason.empty());
+    std::string zero_length;
+    ipc::put_u32_be(zero_length, 0);
+    QCOMPARE(send_frame(socket, zero_length).status, 1);
+    QCOMPARE(send_frame(socket, ipc::encode_request(9, "/x")).status, 1);
+    QTest::qWait(100);  // let any wrongly posted add arrive
+    QCOMPARE(window.findChild<QListWidget*>()->count(), 0);
+}
 
-// }
+void StudentTests::aiws_send_exit_codes() {// E1
+    QTemporaryDir dir;
+    auto window = std::make_unique<aiws::gui::MainWindow>();
+    const QString socket = dir.filePath("s.sock");
+    QVERIFY(window->start_ipc_server(socket));
+    write_file(dir, "rel.txt", "hello world");
+    QProcess send;
+
+    send.setWorkingDirectory(dir.path());
+    send.start(AIWS_SEND_PATH, {"--socket", socket, "add", "rel.txt"});
+    QVERIFY(send.waitForFinished(8000));
+    QCOMPARE(send.exitCode(), 0);
+    QTRY_COMPARE(window->findChild<QListWidget*>()->count(), 1);
+    send.start(AIWS_SEND_PATH, {"--socket", socket, "add", "missing.txt"});
+    QVERIFY(send.waitForFinished(8000));
+    QCOMPARE(send.exitCode(), 1);
+    window.reset();  // app gone
+    send.start(AIWS_SEND_PATH, {"--socket", socket, "add", "rel.txt"});
+    QVERIFY(send.waitForFinished(8000));
+    QCOMPARE(send.exitCode(), 2);
+}
+
+void StudentTests::ipc_stops_and_removes_socket() {// E4
+    QTemporaryDir dir;
+    auto window = std::make_unique<aiws::gui::MainWindow>();
+    const QString socket = dir.filePath("s.sock");
+    QVERIFY(window->start_ipc_server(socket));
+    QVERIFY(QFile::exists(socket));
+
+    // A client stalled halfway through a request must not delay the stop.
+    sockaddr_un address{};
+    QVERIFY(ipc::make_address(socket.toStdString(), address));
+    ipc::UniqueFd stalled(::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0));
+    QVERIFY(::connect(stalled.get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0);
+    QVERIFY(::send(stalled.get(), "\0\0", 2, MSG_NOSIGNAL) == 2);
+    QTest::qWait(150);
+    QElapsedTimer timer;
+    timer.start();
+    window.reset();
+    QVERIFY(timer.elapsed() < 500);
+    QVERIFY(!QFile::exists(socket));
+}
 
 // creates a QApplication since the target links Qt Widgets and the test uses Qt Widgets
 QTEST_MAIN(StudentTests)
