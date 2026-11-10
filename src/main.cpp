@@ -34,7 +34,7 @@ struct Options {
 Options parse_options(const QCoreApplication& app) {
     QCommandLineParser parser;
     parser.addHelpOption();
-    const QCommandLineOption delay_option("build_delay_ms", "Extra build time per document in milliseconds.", "ms", "0");
+    const QCommandLineOption delay_option("build-delay-ms", "Extra build time per document in milliseconds.", "ms", "0");
     const QCommandLineOption socket_option("ipc-socket", "Unix domain socket that aiws_send connects to.", "path", QString::fromStdString(aiws::ipc::default_socket_path()));
     parser.addOption(delay_option);
     parser.addOption(socket_option);
