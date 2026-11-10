@@ -1,0 +1,235 @@
+commit b487e96773d9458c21220bfcac1928e710719f18
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-09 19:29:53 -0500
+
+    added additional CR1 tests and updated design.md
+
+ DESIGN.md               | 80 +++++++++++++++++++++++++++++++++++++++++++
+ tests/student_tests.cpp | 90 ++++++++++++++++++++++++++++++++++++++++++-------
+ 2 files changed, 158 insertions(+), 12 deletions(-)
+
+commit a0e05728a3df721b6480c8a52f91e2e83556dfa8
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-09 18:58:21 -0500
+
+    Completed CR1 files, fixed bugs, updated test cases
+
+ CMakeLists.txt                          |  2 +-
+ include/aiws/gui/main_window.hpp        |  4 +-
+ include/aiws/{gui => }/ipc_protocol.hpp | 12 ++---
+ src/ipc_server.cpp                      | 15 ++++---
+ src/main.cpp                            | 67 ++++++++++++++++++++++++----
+ src/main_window.cpp                     | 12 +++--
+ tests/student_tests.cpp                 | 79 ++++++++++++++++++++++++++++++---
+ {src => tools}/aiws_send.cpp            |  8 +++-
+ 8 files changed, 163 insertions(+), 36 deletions(-)
+
+commit ed25c11b9896b5169f9730a8948997d0058b55bd
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-09 17:01:44 -0500
+
+    updated CR1 implementation
+
+ CMakeLists.txt                    |  11 +++
+ include/aiws/gui/ipc_protocol.hpp | 170 ++++++++++++++++++++++++++++++++++++++
+ include/aiws/gui/ipc_server.hpp   |  37 +++++++++
+ include/aiws/gui/main_window.hpp  |  10 +++
+ src/aiws_send.cpp                 |  95 +++++++++++++++++++++
+ src/ipc_server.cpp                | 128 ++++++++++++++++++++++++++++
+ src/main_window.cpp               |  20 +++++
+ 7 files changed, 471 insertions(+)
+
+commit dff064ce00153e5dbb04e3a0b25d6f5cfb574d4a
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-08 19:54:36 -0500
+
+    fault switched added
+
+ src/build_runner.cpp | 3 +++
+ src/main_window.cpp  | 5 +++++
+ 2 files changed, 8 insertions(+)
+
+commit e830a6e08477dd946afeb02fed42119d2088c6a7
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-08 19:54:03 -0500
+
+    updated design.md with step 6
+
+ DESIGN.md | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+commit 3cf06297a9e28756e59c64690141998bad4dfc82
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-08 19:27:08 -0500
+
+    reset off the GUI thread and join on exits
+
+ include/aiws/gui/main_window.hpp |  3 +++
+ src/main_window.cpp              |  9 ++++++++-
+ tests/student_tests.cpp          | 38 +++++++++++++++++++++++++++++++++++---
+ 3 files changed, 46 insertions(+), 4 deletions(-)
+
+commit 3e78bc6dd1ea51f84084660ae57c85dc61bf0c9c
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-08 18:44:25 -0500
+
+    updated design.md with step 4
+
+ DESIGN.md | 2 ++
+ 1 file changed, 2 insertions(+)
+
+commit ac7b55ee30881b2b9026c6c87abbab705bddd1b6
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-08 18:38:15 -0500
+
+    background build with generation check
+
+ include/aiws/gui/main_window.hpp |  4 +++
+ src/main_window.cpp              | 67 +++++++++++++++++++++++++++-------------
+ src/workspace_widget.cpp         |  3 ++
+ tests/student_tests.cpp          | 51 ++++++++++++++++++++++++++++++
+ 4 files changed, 104 insertions(+), 21 deletions(-)
+
+commit c6028f9360b1b01881092efdca216c600d92c0fe
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-08 17:17:14 -0500
+
+    updated design.md with step 3
+
+ DESIGN.md | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+commit 2bf0f891b94b92ef01a8f153df97c87110c0fade
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-08 17:04:48 -0500
+
+    BuildRunner and DelayedChunker implemented with testing
+
+ CMakeLists.txt                    |  4 ++
+ include/aiws/delayed_chunker.hpp  | 30 +++++++++++++++
+ include/aiws/gui/build_runner.hpp | 50 ++++++++++++++++++++++++
+ src/build_runner.cpp              | 80 +++++++++++++++++++++++++++++++++++++++
+ src/delayed_chunker.cpp           | 37 ++++++++++++++++++
+ tests/student_tests.cpp           | 66 ++++++++++++++++++++++++++++++++
+ 6 files changed, 267 insertions(+)
+
+commit 309c8b016959d7e7841d1a9542e2e10d70cf103e
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-07 13:36:22 -0500
+
+    added delayed chunker and build runner files
+
+ src/build_runner.cpp    | 0
+ src/delayed_chunker.cpp | 0
+ 2 files changed, 0 insertions(+), 0 deletions(-)
+
+commit b1e663c87aab5f65e0349e2b019106ad53c7ccdf
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-07 13:21:30 -0500
+
+    update design.md step 2
+
+ DESIGN.md | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+commit e98c0a3eab04b5c92d3c6a6e10da4369e9155e0e
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-07 12:49:43 -0500
+
+    add_document_file, build delay setting, and first tests ran
+
+ src/main.cpp            | 21 +++++++++++++++++
+ src/main_window.cpp     | 48 ++++++++++++++++++++------------------
+ tests/student_tests.cpp | 62 ++++++++++++++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 108 insertions(+), 23 deletions(-)
+
+commit 321a401486de679cc57c8b577bc55fad51c97484
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-07 10:43:33 -0500
+
+    updated design.md step 1
+
+ DESIGN.md | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+commit aecbe3be2a1353cdd312345e06abbbad918d0f84
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-07 10:31:36 -0500
+
+    corpus state enum and build generation
+
+ DESIGN.md                        | 12 +++++++++++-
+ history.txt                      |  0
+ include/aiws/gui/main_window.hpp | 14 +++++++++++++-
+ src/main_window.cpp              | 29 ++++++++++++++++-------------
+ 4 files changed, 40 insertions(+), 15 deletions(-)
+
+commit 1470a1feaf378860a691ca3c4c03f045d4b3493c
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-06 11:44:26 -0500
+
+    added m3 src files and tested baseline
+
+ dockerfile                    |  32 +++++
+ src/chunker.cpp               |  59 ++++++++
+ src/context_builder.cpp       |  29 ++++
+ src/context_widget.cpp        | 121 ++++++++++++++++
+ src/corpus_index.cpp          |  72 ++++++++++
+ src/document.cpp              |  14 ++
+ src/main.cpp                  |  28 ++++
+ src/main_window.cpp           | 311 ++++++++++++++++++++++++++++++++++++++++++
+ src/processing_core.cpp       | 109 +++++++++++++++
+ src/retrieval_engine.cpp      |  86 ++++++++++++
+ src/search_result_model.cpp   | 114 ++++++++++++++++
+ src/search_widget.cpp         | 184 +++++++++++++++++++++++++
+ src/term_inspector_widget.cpp |  92 +++++++++++++
+ src/text_processor.cpp        | 116 ++++++++++++++++
+ src/workspace.cpp             |  17 +++
+ src/workspace_widget.cpp      | 106 ++++++++++++++
+ 16 files changed, 1490 insertions(+)
+
+commit 769b0dc75125cef890f52e32ad5cc2fa62c7e7bc
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-10-28 23:29:33 -0400
+
+    updated design_note
+
+ DESIGN_NOTE.md | 38 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+commit 1865844787cf4926c06942d099ce11a9f9c106ed
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-10-28 19:28:35 -0400
+
+    first commit
+
+ .gitignore                                 |   3 +
+ CMakeLists.txt                             |  57 +++++++++++
+ DESIGN.md                                  |   3 +
+ DESIGN_NOTE.md                             |   3 +
+ STARTER_README.pdf                         | Bin 0 -> 39600 bytes
+ data/public/doc_ai.txt                     |   3 +
+ data/public/doc_retrieval.txt              |   3 +
+ data/public/doc_systems.txt                |   3 +
+ data/public/queries.txt                    |   4 +
+ include/aiws/chunker.hpp                   |  25 +++++
+ include/aiws/chunking_strategy.hpp         |  18 ++++
+ include/aiws/context_builder.hpp           |  13 +++
+ include/aiws/context_strategy.hpp          |  17 +++
+ include/aiws/corpus_index.hpp              |  36 +++++++
+ include/aiws/document.hpp                  |  22 ++++
+ include/aiws/gui/context_widget.hpp        |  75 ++++++++++++++
+ include/aiws/gui/main_window.hpp           | 159 +++++++++++++++++++++++++++++
+ include/aiws/gui/resettable.hpp            |  22 ++++
+ include/aiws/gui/search_result_model.hpp   |  84 +++++++++++++++
+ include/aiws/gui/search_widget.hpp         | 105 +++++++++++++++++++
+ include/aiws/gui/term_inspector_widget.hpp |  81 +++++++++++++++
+ include/aiws/gui/workspace_widget.hpp      | 101 ++++++++++++++++++
+ include/aiws/processing_core.hpp           |  53 ++++++++++
+ include/aiws/processing_types.hpp          |  38 +++++++
+ include/aiws/retrieval_engine.hpp          |  18 ++++
+ include/aiws/retrieval_strategy.hpp        |  20 ++++
+ include/aiws/text_processor.hpp            |  29 ++++++
+ include/aiws/workspace.hpp                 |  19 ++++
+ tests/student_tests.cpp                    |   2 +
+ 29 files changed, 1016 insertions(+)
