@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(ai_workspace_m4 LANGUAGES CXX)
+project(ai_workspace_m5 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,9 +53,9 @@ target_include_directories(aiws_app PUBLIC include)
 target_link_libraries(aiws_app PUBLIC aiws_m2 Qt6::Widgets)
 target_compile_options(aiws_app PRIVATE -Wall -Wextra -Wpedantic)
 
-add_executable(ai_workspace_m4 src/main.cpp)
-target_link_libraries(ai_workspace_m4 PRIVATE aiws_app)
-target_compile_options(ai_workspace_m4 PRIVATE -Wall -Wextra -Wpedantic)
+add_executable(ai_workspace_m5 src/main.cpp)
+target_link_libraries(ai_workspace_m5 PRIVATE aiws_app)
+target_compile_options(ai_workspace_m5 PRIVATE -Wall -Wextra -Wpedantic)
 
 enable_testing()
 add_executable(student_tests tests/student_tests.cpp)
