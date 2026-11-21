@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <memory>
+#include <cstdint>
 #include <stdexcept>
 
 namespace aiws {
@@ -18,13 +19,14 @@ public:
 // runs on the worker thread and checks here for the cancel flag
 class DelayedChunker final : public ChunkingStrategy {
 public:
-    DelayedChunker(int delay_ms, std::shared_ptr<const std::atomic<bool>> cancel_flag);
+    DelayedChunker(int delay_ms, std::uint64_t generation, const std::atomic<std::uint64_t>& wanted);
     std::vector<Chunk> chunk(const Document& document, std::size_t document_order) const override;
 
 private:
     Chunker chunker_;
     int delay_ms_;
-    std::shared_ptr<const std::atomic<bool>> cancel_flag_;
+    std::uint64_t generation_; // current build's ticket
+    const std::atomic<std::uint64_t>& wanted_; 
 };
 
 } // namespace aiws

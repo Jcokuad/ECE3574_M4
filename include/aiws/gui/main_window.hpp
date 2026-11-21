@@ -6,11 +6,13 @@
 
 #include "aiws/processing_core.hpp"
 #include "aiws/workspace.hpp"
+#include "aiws/gui/build_worker.hpp"
 
 class QLabel;
 class QPushButton;
 class QString;
 class QWidget;
+class BuildRunner;
 
 namespace aiws::gui {
 
@@ -142,7 +144,9 @@ private slots:
      */
     void exit_application();
 
-    void on_build_finished(quint64 generation);
+    void on_build_succeeded(const aiws::gui::BuiltCorpus& built);  // queued from the worker thread
+
+    void on_build_failed(quint64 generation, const QString& message);
 
     void remote_add_requested(const QString& path); // posted by IpcServer's thread
 
@@ -171,9 +175,10 @@ private:
     ProcessingCore processing_core_;
     // bool corpus_current_{false}; replacing this with the state enum for the corpus state
     CorpusState corpus_state_{CorpusState::NotBuilt};
-    quint64 build_generation_{0}; // increments each time the corpus is rebuilt, Build, Add Document, or Reset is called and helps to ignore stale build results
     int build_delay_ms_{0}; // copied into the build when it starts and used to delay the build of each doc in the workspace for simulating a slow build
     ExitCallback exit_callback_{nullptr};
+    BuildWorker build_worker_; // owns the one build thread
+    std::uint64_t build_generation_{0}; // generation of the build still wanted, 0 = none
 
     WorkspaceWidget* workspace_widget_{nullptr};
     SearchWidget* search_widget_{nullptr};
@@ -182,7 +187,6 @@ private:
     QLabel* status_label_{nullptr};
     QPushButton* reset_button_{nullptr};
     QPushButton* exit_button_{nullptr};
-    BuildRunner* build_runner_{nullptr};
 };
 
 }  // namespace aiws::gui

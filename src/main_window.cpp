@@ -7,7 +7,6 @@
 #include "aiws/gui/term_inspector_widget.hpp"
 #include "aiws/gui/workspace_widget.hpp"
 #include "aiws/gui/search_widget.hpp"
-#include "aiws/gui/build_runner.hpp"
 #include "aiws/gui/ipc_server.hpp"
 
 #include <QFile>
@@ -91,9 +90,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(reset_button_, &QPushButton::clicked, this, &MainWindow::reset_application);
     connect(exit_button_, &QPushButton::clicked, this, &MainWindow::exit_application);
 
-    // create the runner
-    build_runner_ = new BuildRunner(this);
-    connect(build_runner_, &BuildRunner::build_finished, this, &MainWindow::on_build_finished);
+    // worker to GUI, Qt queues the call onto the GUI thread's event loop
+    connect(&build_worker_, &BuildWorker::build_succeeded, this, &MainWindow::on_build_succeeded);
+    connect(&build_worker_, &BuildWorker::build_failed, this, &MainWindow::on_build_failed);
     status_label_->setObjectName("statusLabel");
 
     // startup
@@ -101,7 +100,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 }
 
 MainWindow::~MainWindow() {
-    build_runner_->shutdown(); // stop and join the worker bedore any member or child is destroyed
+    build_worker_.stop(); // wake/cancel and join the worker before any member or child is destoryed
     if (ipc_server_) {
         ipc_server_->stop(); // E4
     }
@@ -167,18 +166,13 @@ void MainWindow::set_build_delay_ms(int ms_per_document) {
 }
 
 void MainWindow::build_corpus() {
-    if (workspace_.documents().empty() || build_runner_->busy()) {
+    if (workspace_.documents().empty() || corpus_state_ == CorpusState::Building) {
         return;
     }
-
-    build_generation_++; // this build's ticket
-
-    // workspace_ is copied here on the GUI thread and the worker gets the copy
-    if (!build_runner_->start(build_generation_, workspace_, build_delay_ms_)) {
-        return;
-    }
-    corpus_state_ = CorpusState::Building;
     clear_processing_outputs();
+    // workspace_ is copied here on the GUI thread and the worker gets the copy
+    build_generation_ = build_worker_.request(workspace_, build_delay_ms_);  // returns right away (R2)
+    corpus_state_ = CorpusState::Building;
     workspace_widget_->set_corpus_status("Building...");
     status_label_->setText(QString("Now building corpus from %1 document(s)...")
         .arg(static_cast<qulonglong>(workspace_.documents().size())));
@@ -284,8 +278,8 @@ void MainWindow::term_inspection_requested(const QString& term,
 
 // std::thread that is destroyed while still joinable calls std::terminate to keep Exit from crashing
 void MainWindow::reset_application() {
-    build_generation_++;
-    build_runner_->cancel(); // stops early and on_build_finished() discards it
+    build_worker_.cancel();  // a running build stops at its next document (R3)
+    build_generation_ = 0;   // no build is wanted, so a late result is ignored
     // backend first
     workspace_.clear();
     processing_core_ = ProcessingCore{};
@@ -311,11 +305,12 @@ void MainWindow::update_action_states() {
     // decides whihc action buttons are enabled
     const bool has_docs = !workspace_.documents().empty();
     const bool has_query = search_widget_->has_query();
+    const bool built = corpus_state_ == CorpusState::Built;
 
-    workspace_widget_->set_build_corpus_enabled(has_docs && !build_runner_->busy());  // second build can't start while a thread exists
-    search_widget_->set_search_enabled(corpus_state_ == CorpusState::Built && has_query);
-    term_inspector_widget_->set_inspection_enabled(corpus_state_ == CorpusState::Built);
-    context_widget_->set_build_context_enabled(corpus_state_ == CorpusState::Built && has_query);
+    workspace_widget_->set_build_corpus_enabled(has_docs && corpus_state_ != CorpusState::Building);
+    search_widget_->set_search_enabled(built && has_query);
+    term_inspector_widget_->set_inspection_enabled(built);
+    context_widget_->set_build_context_enabled(built && has_query);
 }
 
 void MainWindow::invalidate_corpus() {
@@ -324,9 +319,8 @@ void MainWindow::invalidate_corpus() {
         workspace_widget_->set_corpus_status("Corpus: Old Corpus (rebuild required)"); // check for stale corpus
     }
     
-    build_generation_++; 
-    build_runner_->cancel();
-
+    build_worker_.cancel();
+    build_generation_ = 0;
     clear_processing_outputs();
     update_action_states();
 }
@@ -339,34 +333,28 @@ void MainWindow::clear_processing_outputs() {
     context_widget_->clear_context();
 }
 
-void MainWindow::on_build_finished(quint64 generation) {
-    // valid only if nothing has changed the workspace since the build started
-#ifdef AIWS_FAULT_ACCEPT_STALE
-    const bool valid = true; // FAULT R2, accept even after add document or reset
-    Q_UNUSED(generation);
-#else
-    const bool valid = (generation == build_generation_);
-#endif
-
-    try {
-        ProcessingCore built = build_runner_->take_result(); // or rethrows
-
-        if (valid) {
-            processing_core_ = std::move(built); // moves and destroys prev corpus
-            corpus_state_ = CorpusState::Built;
-            const auto chunks = static_cast<qulonglong>(processing_core_.chunk_count());
-            workspace_widget_->set_corpus_status(QString("Corpus: %1 chunks").arg(chunks));
-            status_label_->setText(QString("Corpus built: %1 chunks.").arg(chunks));
-        }
-        // if not valid built is destroyed at the end of block
-    } catch (const std::exception& error) {
-        if (valid) { // cancelled or outdated build is not reported as a failure
-            corpus_state_ = CorpusState::Stale;
-            workspace_widget_->set_corpus_status("Build has failed");
-            status_label_->setText(QString("Build has failed: %1")
-                .arg(error.what()));
-        }
+void MainWindow::on_build_succeeded(const BuiltCorpus& built) {
+    if (built.generation != build_generation_) {
+        return;
     }
+    
+    processing_core_ = std::move(*built.core);  // moves and destroys prev corpus
+    corpus_state_ = CorpusState::Built;
+
+    const auto chunks = static_cast<qulonglong>(processing_core_.chunk_count());
+    workspace_widget_->set_corpus_status(QString("Corpus: %1 chunks").arg(chunks));
+    status_label_->setText(QString("Corpus built: %1 chunks.").arg(chunks));
+    update_action_states();
+}
+
+void MainWindow::on_build_failed(quint64 generation, const QString& message) {
+    if (generation != build_generation_) {
+        return;  // cancelled or outdated build is not reported as a failure 
+    }
+
+    corpus_state_ = CorpusState::Stale;
+    workspace_widget_->set_corpus_status("Build has failed");
+    status_label_->setText(QString("Build has failed: %1").arg(message));
     update_action_states();
 }
 
