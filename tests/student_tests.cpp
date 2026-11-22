@@ -3,6 +3,7 @@
 #include "aiws/gui/main_window.hpp"
 #include "aiws/gui/build_worker.hpp"
 #include "aiws/ipc_protocol.hpp"
+#include "aiws/gui/corpus_phase.hpp"
 
 #include <QElapsedTimer>
 #include <QFile>
@@ -98,6 +99,28 @@ bool has_started(std::uint64_t generation) {
     return std::find(started.begin(), started.end(), generation) != started.end();
 }
 
+// stands in for MainWindow so states can be tested alone
+class FakeContext final : public aiws::gui::CorpusContext {
+
+public:
+    std::uint64_t start_build() override { return ++starts; }
+    void cancel_build() override { ++cancels; }
+    std::size_t accept_corpus(aiws::ProcessingCore) override { return 3; }
+    void show_message(const QString& text) override { message = text; }
+    std::uint64_t starts{0};
+    int cancels{0};
+    QString message;
+};
+
+// replaces phase if the state returned a next one, like MainWindow::transition
+void apply(std::unique_ptr<aiws::gui::CorpusPhase>& phase, std::unique_ptr<aiws::gui::CorpusPhase> next) {
+    if (next) phase = std::move(next);
+}
+
+BuiltCorpus built(std::uint64_t generation) {
+    return BuiltCorpus{generation, std::make_shared<aiws::ProcessingCore>(), std::this_thread::get_id()};
+}
+
 int exit_requests = 0;
 void record_exit(QWidget*) {
     exit_requests++;
@@ -149,12 +172,14 @@ private slots:
     void worker_reports_failure();
     void click_hands_off_and_becomes_current(); // R2
     void reset_mid_build_does_not_delay_next_build(); // R3
-    void add_mid_build_never_becomes_current(); // R3, decision 1
+    void add_mid_build_never_becomes_current(); // R3
+    void states_follow_the_transition_table(); // R5
+    void old_result_is_ignored_by_new_build(); // R5
     void add_document_file_valid();
     void add_document_file_invalid();
     void exit_and_repeated_builds();
     void ipc_add_odd_path_in_pieces();        // E1, E2, E3
-    void ipc_add_during_build_stale_corpus(); // E1 with decision 2
+    void ipc_add_during_build_stale_corpus(); // E1
     void ipc_reject_bad_requests();
     void aiws_send_exit_codes();              // E1
     void ipc_stops_and_removes_socket();      // E4
@@ -307,11 +332,63 @@ void StudentTests::add_mid_build_never_becomes_current() {
 
     QVERIFY(window.add_document_file(write_file(dir, "b.txt", "jorts shirt")));
     QCOMPARE(corpus_status(window)->text(), QString("Corpus: Old Corpus (rebuild required)"));
-    QVERIFY(build->isEnabled());  // decision 1: rebuild allowed right away
+    QVERIFY(build->isEnabled());  // rebuild allowed right away
     QTest::qWait(500);            // the cancelled build would have finished by now
     QCOMPARE(corpus_status(window)->text(), QString("Corpus: Old Corpus (rebuild required)"));
     query_edit(window)->setText("hello");
     QVERIFY(!button(window, "Search")->isEnabled());
+}
+
+void StudentTests::states_follow_the_transition_table() {
+    FakeContext ctx;
+    std::unique_ptr<aiws::gui::CorpusPhase> phase = std::make_unique<aiws::gui::NotBuiltPhase>();
+    QCOMPARE(phase->status_text(), QString("Corpus: Not Built"));
+    apply(phase, phase->workspace_changed(ctx));  // NotBuilt ignores changes
+    QCOMPARE(phase->status_text(), QString("Corpus: Not Built"));
+
+    apply(phase, phase->build_requested(ctx));  // NotBuilt to Building(1)
+    QCOMPARE(ctx.starts, std::uint64_t{1});
+    QVERIFY(!phase->can_build());
+    apply(phase, phase->build_requested(ctx));  // Building ignores a second build
+    QCOMPARE(ctx.starts, std::uint64_t{1});
+
+    apply(phase, phase->build_succeeded(ctx, built(1)));  // Building to Current(3)
+    QCOMPARE(phase->status_text(), QString("Corpus: 3 chunks"));
+    QVERIFY(phase->can_process());
+
+    apply(phase, phase->workspace_changed(ctx));  // Current to Stale
+    QCOMPARE(phase->status_text(), QString("Corpus: Old Corpus (rebuild required)"));
+    QCOMPARE(ctx.cancels, 0);  // nothing was running
+
+    apply(phase, phase->build_requested(ctx));  // Stale to Building(2)
+    apply(phase, phase->workspace_changed(ctx));  // Building to cancel to Stale
+    QCOMPARE(ctx.cancels, 1);
+    QVERIFY(!phase->can_process());
+
+    apply(phase, phase->build_requested(ctx));  // Stale to Building(3)
+    apply(phase, phase->build_failed(ctx, 3, "boom"));  // Building to Failed
+    QCOMPARE(phase->status_text(), QString("Build has failed"));
+    QVERIFY(ctx.message.contains("boom"));
+
+    apply(phase, phase->build_requested(ctx));  // Failed to Building(4)
+    apply(phase, phase->reset(ctx));  // Building to cancel to NotBuilt
+    QCOMPARE(ctx.cancels, 2);
+    QCOMPARE(phase->status_text(), QString("Corpus: Not Built"));
+}
+
+// a build that finished just before its cancel was seen must not become current
+void StudentTests::old_result_is_ignored_by_new_build() {
+    FakeContext ctx;
+    std::unique_ptr<aiws::gui::CorpusPhase> phase = std::make_unique<aiws::gui::StalePhase>();
+    apply(phase, phase->build_requested(ctx));  // Building(1)
+    apply(phase, phase->workspace_changed(ctx));
+    apply(phase, phase->build_requested(ctx));  // Building(2)
+    apply(phase, phase->build_succeeded(ctx, built(1)));  // old one arrives late
+    QCOMPARE(phase->status_text(), QString("Building..."));
+    apply(phase, phase->build_failed(ctx, 1, "old"));
+    QCOMPARE(phase->status_text(), QString("Building..."));
+    apply(phase, phase->build_succeeded(ctx, built(2)));
+    QCOMPARE(phase->status_text(), QString("Corpus: 3 chunks"));
 }
 
 void StudentTests::add_document_file_valid() {

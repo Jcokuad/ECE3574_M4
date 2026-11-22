@@ -38,6 +38,7 @@ add_library(aiws_app STATIC
     src/ipc_server.cpp
     src/build_mailbox.cpp
     src/build_worker.cpp 
+    src/corpus_phase.cpp
     include/aiws/gui/main_window.hpp
     include/aiws/gui/resettable.hpp
     include/aiws/gui/workspace_widget.hpp
@@ -51,6 +52,7 @@ add_library(aiws_app STATIC
     include/aiws/gui/build_job.hpp 
     include/aiws/gui/build_mailbox.hpp
     include/aiws/gui/build_worker.hpp
+    include/aiws/gui/corpus_phase.hpp
 )
 target_include_directories(aiws_app PUBLIC include)
 target_link_libraries(aiws_app PUBLIC aiws_m2 Qt6::Widgets)

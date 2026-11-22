@@ -1,105 +1,41 @@
 # M5 Decision Record
 
-## Section (1) Threads and ownership, including the statement for constraint 5
-GUI thread has MainWindow, all widgets, SearchResultModel, and every public function of BuildRunner, which includes start, busy, cancel, take_result, shutdown, on_worker_done. Worker thread has BuildRunner::run() and the DelayedChunker it calls.
+## Section (1)  M4 fixes:
 
-BuildRunner owns only one thread (worker_) at a time, and start() refuses to allow another one to begin while worker_ is joinable. The run() function is a static function that receives a Workspace snapshot, the promise, its own chunking strategy and the generation. The completed ProcessingCore or the exception goes through std::promise<ProcessingCore> to std::future<ProcessingCore> result_.run() then posts it on on_worker_done() so the GUI only calls get() once the value is ready, which prevents blocking.
 
-DelayedChunker wraps the M1 Chunker and is installed through M2's three-argument ProcessingCore constructor, so the real build path is slowed. 
-
-The shared mutable data part of constraint 5:
-- The promise and future shared state
-- The cancel flag
-Everything else crosses threads by value, such as the Workspace snapshot, the delay, and the generation.
-
-Lifecycle:
-- MainWindow::~MainWindow() calls build_runner_->shutdown() first. It sets the cancel flag first then joins. 
-- Reset_application() replaces processing_core_ with ProcessingCore{} instead of M3's rebuild on the BUI thread
-- Repeated builds change with at most one thread existsing and none accumulating. BuildRunner::start() refuses while busy.
-
-Ownership Path of a Corpus:
-1) run(), where worker constructs a local ProcessingCore
-2) rebuild(snapshot), where promise.set_value(std::move(core)) moves it to the promise/future shared state
-3) on_build_finished(), where the GUI calls take_result() to moves it out with future.get()
-4) Valid check
-5) Accepted corpus lives until the next accepted build
-
-IPC thread (CR-1): serve() and handle_client() run on IpcServer's own
-std::thread. MainWindow owns the IpcServer with a unique_ptr, and start()
-and stop() run on the GUI thread. ~MainWindow shuts down the build thread
-first, then stops the server, so both threads are joined before anything
-gets destroyed and nothing can be posted to a destroyed MainWindow. Sockets
-are held by UniqueFd, which closes them automatically.
-
-Shared data for CR-1:
-- stop_ is a std::atomic<bool>. The GUI thread sets it in stop() and the
-  IPC thread checks it at least every 100 ms.
-- receiver_, socket_path_, and listen_fd_ are only set before the thread
-  starts and only cleaned up after it is joined, so the two threads never
-  touch them at the same time.
-- The path sent to the GUI is a QString copied into Qt's event queue, which
-  is thread safe.
-
-## Section (2) How a finished build is judged valid
-2. Threads and shared data
+## Section (2)  Threads and shared data:
 Three threads. GUI thread: widgets, MainWindow, all corpus states. Build thread: one std::thread owned by BuildWorker, started in its constructor and joined in stop(), runs every build (R1). IPC thread from CR-1. The GUI and build thread share only two things: BuildMailbox (std::mutex + std::condition_variable) holds at most one BuildJob, newest wins; the GUI posts and the worker sleeps in wait_and_take() until there is a job or stop. The lock is only held to move the job in or out, never during a build, so the GUI never waits (R2). wanted_ (std::atomic<uint64_t>) is the generation still wanted, 0 = none; request() sets it, cancel() and stop() set 0, and DelayedChunker checks it before every document. The job holds a copy of workspace_ made on the GUI thread, and results come back by queued signal, so neither one is shared.
 
-## Section (3) Changes since the checkpoint
 Shared data: the mailbox and wanted_. It cannot be smaller: the worker needs some way to get a request while asleep (mailbox, needs a cv to wait without polling), and a running build needs some way to learn mid-build that it is useless (wanted_), which the mailbox cannot do because the worker is not reading it during a build.
 
-## Section (4) CR-1 impact, meaning which functions changed and why the rest did not 
-Request: a 4 byte big endian length N, then N bytes: 1 opcode byte (1 means
-add) followed by the UTF-8 path. Length prefixing makes spaces, newlines,
-and non ASCII bytes safe (E2) and lets the server wait for exactly N bytes
-(E3). N has to be between 1 and 64 KiB, so a length of 0, a garbage length,
-an unknown opcode, or a relative path gets rejected.
+## Section (3) States:
+Mainwindow is the context, phase_ holds the current CorpusPhase, and every event calls transition(phase_->event(*this)), which returns the next state or nullptr to stay. NotBuilt, Current, Stale, and Failed all start a build when Build is clicked in the window. Building cancels then goes stale on a change or NotBuilt on reset, goes to Current or Failed on its own result, and ignores results from any other generation. Current and Failed go to stale on a change, while every other state goes to NotBuilt on a reset.
 
-Reply: 1 status byte (0 ok, 1 rejected), a 4 byte big endian length M, then
-M bytes of UTF-8 reason text.
+## Section (4)  One event sequence that threatens R1 to R4, traced step by step through your functions on both threads.
 
-The byte format lives in ipc_protocol.hpp. It has no Qt in it, so
-IpcServer, aiws_send, and the tests all share it. Big endian numbers are
-built by shifting bytes, not by memcpy.
+add_document_file() calls Building::workspace_changed(), which calls cancel_build() so
+wanted_ becomes 0, and the state goes to Stale. On the worker, the current document's sleep
+ends, DelayedChunker::chunk() sees wanted_ doesn't match its generation and throws
+BuildCancelled, and build() emits nothing. If the last document was already done, the
+queued result is ignored by Stale or a newer Building, so it never becomes current.
 
-aiws_send turns a relative path into an absolute one using its own working
-directory (E1). Exit codes: 0 received and readable, 1 rejected (reason
-printed to stderr), 2 no application within 2 s, a failure within 5 s, or
-bad usage.
 
-Server: a new IpcServer class with its own std::thread. It uses poll() with
-100 ms timeouts and checks an atomic stop flag, so it can stop well inside
-500 ms. The thread checks that the file is readable with POSIX calls,
-replies, and then posts add_document_file to the GUI thread with a queued
-invokeMethod (through the remote_add_requested slot). The reply never waits
-for the GUI thread (constraint 3).
+## Section (5) Three Decisions:
+1. Build is off during a build since BuildingPhase::can_build() is false. After a change
+cancels a build, Stale allows Build right away and request() sets wanted_ so the old build
+stops within one document.
 
-What changed: IpcServer, start_ipc_server(), remote_add_requested(), the
---ipc-socket option in main.cpp, aiws_send, and ~MainWindow now also stops
-the server.
-What did not change: build_corpus(), on_build_finished(), BuildRunner, and
-the generation check. A remote add goes through add_document_file() on the
-GUI thread exactly like Add Document does, so it invalidates the corpus and
-bumps build_generation_ the same way. A remote add during a build still
-makes that build stale (R2).
+2. remote_add_requested() calls add_document_file(), the same event as a local add, so the
+build is cancelled and the corpus shows "Corpus: Old Corpus (rebuild required)" with no
+automatic rebuild.
 
-Shutdown: ~MainWindow stops and joins the server and then removes the
-socket file (E4). A client stuck halfway through a request can't hold it up
-because every read checks the stop flag. SIGINT and SIGTERM just set a flag
-that main.cpp checks every 100 ms, then quit normally, so ~MainWindow still
-runs and the socket file still gets removed.
+## Section (6) Fault Switches:
+AIWS_FAULT_NO_CANCEL skips the wanted_ check in DelayedChunker::chunk(), so the useless
+build runs every document and the next one waits behind it, caught by reset_mid_build_does_not_delay_next_build and shutdown_mid_build_is_prompt AIWS_FAULT_SILENT_SHUTDOWN skips notify_one() in BuildMailbox::stop(), so an idle worker
+never wakes and Exit hangs on join, caught by idle_shutdown_is_prompt, which runs first and
+exits after 2 s.
 
-Limits: one client at a time, so a stalled client can hold the next one for
-up to 5 s. start() removes an old socket file before bind(), so a second
-copy of the app on the same path takes it over.
-
-## Section (5) Where each fault switch is and which test catches it
-AIWS_FAULT_ACCEPT_STALE
-It was placed in MainWindow::on_build_finished() in the line that computes valid. The defect makes it so that valid is always true, which would make outdated builds still accepted after Add Document or Reset. It's caught by my test called discards_results_add_during_build(), and the corpus label shows a chunk count or "Build failed" instead of the line "Out of date (rebuild required)". 
-
-AIWS_FAULT_LOSE_FAILURE
-It was placed in the catch block of BuildRunner::run(). The defect makes it so that after set_exception(), run() returns without posting on_worker_done(), so the GUI never leaves Building. It was caught by my test called runner_throws_failure().
-
-## Section (6) AI-use disclosure 
+## Section (7) AI-use disclosure 
 AI was used for assiting with planning the CR-1 design, Implementing thorough Test Cases, and gaining a better understanding of how all the pieces fit together. AI was also used to improve the formatting of this Design.md so it is more readable and covers the planning phase that it was used for. 
 
 ## Pair Programming log

@@ -7,12 +7,12 @@
 #include "aiws/processing_core.hpp"
 #include "aiws/workspace.hpp"
 #include "aiws/gui/build_worker.hpp"
+#include "aiws/gui/corpus_phase.hpp"
 
 class QLabel;
 class QPushButton;
 class QString;
 class QWidget;
-class BuildRunner;
 
 namespace aiws::gui {
 
@@ -20,16 +20,7 @@ class ContextWidget;
 class SearchWidget;
 class TermInspectorWidget;
 class WorkspaceWidget;
-class BuildRunner;
 class IpcServer;
-
-// replace the bool with a state enum for the corpus state
-enum class CorpusState {
-    NotBuilt,   // has not been built yet after a startup or reset
-    Building,   // build of the workspace is running
-    Built,      // has been built and is currently matching the workspace
-    Stale       // workspace has been changed since the last build
-};
 
 /**
  * @brief Main application window and coordinator for the M3 AI Workspace GUI.
@@ -38,7 +29,7 @@ enum class CorpusState {
  * major GUI components, and coordinates application-wide state changes and
  * backend operations in response to component events.
  */
-class MainWindow final : public QMainWindow {
+class MainWindow final : public QMainWindow, private CorpusContext {
     Q_OBJECT
 
 public:
@@ -151,6 +142,20 @@ private slots:
     void remote_add_requested(const QString& path); // posted by IpcServer's thread
 
 private:
+
+    // CorpusContext
+    // called only by the current state
+    std::uint64_t start_build() override;
+
+    void cancel_build() override;
+
+    std::size_t accept_corpus(ProcessingCore core) override;
+
+    void show_message(const QString& text) override;
+
+    // installs the next if the state returns one, then it redraws from the current state
+    void transition(std::unique_ptr<CorpusPhase> next);
+
     /**
      * @brief Updates availability of actions that depend on current application state.
      */
@@ -162,7 +167,7 @@ private:
      * Processing output that depends on the previous corpus is no longer made
      * available after invalidation.
      */
-    void invalidate_corpus();
+    // void invalidate_corpus();
 
     /**
      * @brief Clears displayed search and context output that depends on processing state.
@@ -173,12 +178,10 @@ private:
 
     Workspace workspace_;
     ProcessingCore processing_core_;
-    // bool corpus_current_{false}; replacing this with the state enum for the corpus state
-    CorpusState corpus_state_{CorpusState::NotBuilt};
     int build_delay_ms_{0}; // copied into the build when it starts and used to delay the build of each doc in the workspace for simulating a slow build
     ExitCallback exit_callback_{nullptr};
     BuildWorker build_worker_; // owns the one build thread
-    std::uint64_t build_generation_{0}; // generation of the build still wanted, 0 = none
+    std::unique_ptr<CorpusPhase> phase_; // current corpus state on the GUI thread
 
     WorkspaceWidget* workspace_widget_{nullptr};
     SearchWidget* search_widget_{nullptr};

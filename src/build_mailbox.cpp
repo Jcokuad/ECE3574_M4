@@ -37,7 +37,12 @@ void BuildMailbox::stop() {
         slot_.reset(); // nontaken request is never built
     } // lock_guard is destoryed here
 
+#ifdef AIWS_FAULT_SILENT_SHUTDOWN // hangs when no build is running
+    // FAULT R4: no wakeup
+    // A worker asleep in wait_and_take() never sees stopped_, so join() in BuildWorker::stop() hangs Exit
+#else
     ready_.notify_one();
+#endif
 }
 
 } // namespace aiws::gui
