@@ -8,10 +8,12 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <poll.h>
 
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+
 
 namespace aiws::gui {
 
@@ -52,32 +54,56 @@ bool IpcServer::start(const std::string& socket_path, std::string* error) {
         return fail(std::string("listen: ") + std::strerror(errno));
     }
 
+    int pipe_fds[2];
+    if (::pipe2(pipe_fds, O_CLOEXEC) != 0) {
+        ::unlink(socket_path.c_str());
+        return fail(std::string("pipe: ") + std::strerror(errno));
+    }
+
+    wake_read_.reset(pipe_fds[0]);
+    wake_write_.reset(pipe_fds[1]);
+
     socket_path_ = socket_path;
     listen_fd_ = std::move(fd);
-    stop_.store(false);
     thread_ = std::thread(&IpcServer::serve, this);
     return true;
 }
 
 void IpcServer::stop() {
-    stop_.store(true);
-    if (thread_.joinable()) thread_.join();
+    if (thread_.joinable()) {
+        const char byte = 1;
+
+        // The byte is never read, so the pipe stays readable 
+        // every later poll() on the server thread also returns Stopped right away
+        if (::write(wake_write_.get(), &byte, 1) != 1) { /* pipe is empty and open: cannot fail */ }
+        thread_.join();
+    }
+
     if (listen_fd_.valid()) {
         listen_fd_.reset();
-        ::unlink(socket_path_.c_str()); // E4: remove the socket file
+        ::unlink(socket_path_.c_str());  // remove the socket file
     }
+
+    wake_read_.reset();
+    wake_write_.reset();
 }
 
 // Server thread
 void IpcServer::serve() {
-    while (!stop_.load()) {
-        pollfd p{listen_fd_.get(), POLLIN, 0};
-        const int rc = ::poll(&p, 1, 100); // wake every 100 ms
-        if (rc <= 0) continue;
+    while (true) {
+        pollfd p[2] = {{listen_fd_.get(), POLLIN, 0}, {wake_read_.get(), POLLIN, 0}};
+        const int rc = ::poll(p, 2, -1);  // sleeps until a client connects or stop() writes
+        if (rc < 0) {
+            if (errno == EINTR) continue;
+            return;
+        }
+
+        if (p[1].revents != 0) return;  // stop() was called
+        if ((p[0].revents & POLLIN) == 0) continue;
 
         ipc::UniqueFd client(::accept4(listen_fd_.get(), nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC));
         if (client.valid()) handle_client(client.get());
-        //client closes here
+        // client closes here
     }
 }
 
@@ -86,12 +112,12 @@ void IpcServer::handle_client(int client_fd) {
     const auto deadline = ipc::Clock::now() + std::chrono::seconds(5);
     auto reply = [client_fd, deadline, this](std::uint8_t status, const std::string& reason) {
         const std::string frame = ipc::encode_reply(status, reason);
-        ipc::write_all(client_fd, frame.data(), frame.size(), deadline, &stop_);
+        ipc::write_all(client_fd, frame.data(), frame.size(), deadline, wake_read_.get());
     };
 
     // E3, read_exact keeps reading until all bytes arrive
     char header[4];
-    if (ipc::read_exact(client_fd, header, sizeof(header), deadline, &stop_) != ipc::IoResult::Ok) {
+    if (ipc::read_exact(client_fd, header, sizeof(header), deadline, wake_read_.get()) != ipc::IoResult::Ok) {
         return; // client gave up and timed out with nothing to reply to
     }
     const std::uint32_t length = ipc::get_u32_be(header);
@@ -101,7 +127,7 @@ void IpcServer::handle_client(int client_fd) {
     }
 
     std::string body(length, '\0');
-    if (ipc::read_exact(client_fd, &body[0], length, deadline, &stop_) != ipc::IoResult::Ok) {
+    if (ipc::read_exact(client_fd, &body[0], length, deadline, wake_read_.get()) != ipc::IoResult::Ok) {
         return;
     }
     const auto opcode = static_cast<std::uint8_t>(body[0]);

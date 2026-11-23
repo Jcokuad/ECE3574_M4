@@ -4,7 +4,6 @@
 
 #include <QObject>
 
-#include <atomic>
 #include <string>
 #include <thread>
 
@@ -13,7 +12,7 @@ namespace aiws::gui {
 class IpcServer {
 public:
     explicit IpcServer(QObject* receiver);
-    ~IpcServer(); // stop()
+    ~IpcServer();
 
     IpcServer(const IpcServer&) = delete;
     IpcServer& operator=(const IpcServer&) = delete;
@@ -30,8 +29,9 @@ private:
     QObject* receiver_; // non owning
     std::string socket_path_;
     ipc::UniqueFd listen_fd_;
-    std::atomic<bool> stop_{false};
     std::thread thread_;
+    ipc::UniqueFd wake_read_;
+    ipc::UniqueFd wake_write_;
 };
 
 } // namespace aiws::gui

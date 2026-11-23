@@ -8,11 +8,28 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QSocketNotifier>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <csignal>
 #include <iostream>
 
 namespace {
+
+volatile std::sig_atomic_t g_signal_write_fd = -1;  // set once, before the handlers
+
+void request_stop(int) {
+    const char byte = 1;
+    if (::write(g_signal_write_fd, &byte, 1) < 0) {}
+}
+
+class SignalWatcher : public QObject {
+    Q_OBJECT
+public slots:
+    void on_signal() { QApplication::quit(); }
+};
 
 // Define the ExitCallback function used to confirm an Exit request.
 void confirm_exit(QWidget* parent) {
@@ -25,43 +42,6 @@ void confirm_exit(QWidget* parent) {
     }
 }
 
-struct Options {
-    int build_delay_ms{0}; 
-    QString ipc_socket;
-};
-
-// Returns the build delay in ms from the command line arguments, or -1 if it is a negative num or not provided
-Options parse_options(const QCoreApplication& app) {
-    QCommandLineParser parser;
-    parser.addHelpOption();
-    const QCommandLineOption delay_option("build-delay-ms", "Extra build time per document in milliseconds.", "ms", "0");
-    const QCommandLineOption socket_option("ipc-socket", "Unix domain socket that aiws_send connects to.", "path", QString::fromStdString(aiws::ipc::default_socket_path()));
-    parser.addOption(delay_option);
-    parser.addOption(socket_option);
-    parser.process(app);
-
-    Options options;
-    bool ok = false;
-    const int delay = parser.value(delay_option).toInt(&ok);
-    options.build_delay_ms = (ok && delay >= 0) ? delay : -1;
-    options.ipc_socket = parser.value(socket_option);
-    return options;
-}
-
-// SIGINT/SIGTERM only set this flag. Signal Watcher checks it on the GUI thread and quits normally
-// so ~MainWindow joins both threads and removes the socket file E4
-volatile std::sig_atomic_t g_stop_requested = 0;
-
-void request_stop(int) { g_stop_requested = 1; }
-
-class SignalWatcher : public QObject {
-    Q_OBJECT
-public slots:
-    void check() {
-        if (g_stop_requested != 0) QApplication::quit();
-    }
-};
-
 } //namespace
 
 int main(int argc, char* argv[]) {
@@ -69,32 +49,49 @@ int main(int argc, char* argv[]) {
     // register the ExitCallback, show the window, and run the event loop.
     QApplication app(argc, argv);
 
-    const Options options = parse_options(app);
-    if (options.build_delay_ms < 0) {
-        std::cerr << "--build-delay-ms must be a non-negative integer\n";
-        return 2;
+    QCommandLineParser parser;
+    parser.addHelpOption();
+    const QCommandLineOption delay_option("build-delay-ms", "Extra build time per document, in ms.", "ms", "0");
+    const QCommandLineOption socket_option("ipc-socket", "Unix socket for aiws_send.", "path", QString::fromStdString(aiws::ipc::default_socket_path()));
+    parser.addOption(delay_option);
+    parser.addOption(socket_option);
+    parser.process(app);
+
+    bool ok = false;
+    const int delay = parser.value(delay_option).toInt(&ok);
+    if (!ok || delay < 0) { 
+        std::cerr << "--build-delay-ms must be a non-negative integer\n"; return 2; 
     }
 
     aiws::gui::MainWindow window;
     window.set_exit_callback(&confirm_exit);
-    window.set_build_delay_ms(options.build_delay_ms);
-
+    window.set_build_delay_ms(delay);
     QString ipc_error;
-    if (!window.start_ipc_server(options.ipc_socket, &ipc_error)) {
+    if (!window.start_ipc_server(parser.value(socket_option), &ipc_error))
         std::cerr << "warning: remote add disabled: " << ipc_error.toStdString() << '\n';
-    }
-
     window.show();
 
+    int signal_pipe[2];
+    if (::pipe2(signal_pipe, O_CLOEXEC | O_NONBLOCK) != 0) {
+        std::cerr << "could not create signal pipe\n";
+        return 2;
+    }
+
+    aiws::ipc::UniqueFd signal_read(signal_pipe[0]);
+    aiws::ipc::UniqueFd signal_write(signal_pipe[1]);
+    g_signal_write_fd = signal_write.get();
+
+    SignalWatcher watcher;
+    QSocketNotifier notifier(signal_read.get(), QSocketNotifier::Read);
+    QObject::connect(&notifier, &QSocketNotifier::activated, &watcher, &SignalWatcher::on_signal);
     std::signal(SIGINT, &request_stop);
     std::signal(SIGTERM, &request_stop);
-    SignalWatcher watcher;
-    QTimer stop_timer;
-    QObject::connect(&stop_timer, &QTimer::timeout, &watcher, &SignalWatcher::check);
-    stop_timer.start(100);
 
-    // run the event loop
-    return app.exec();
+    const int code = app.exec();
+    std::signal(SIGINT, SIG_DFL);  // the pipe closes below; no handler may write to it after
+    std::signal(SIGTERM, SIG_DFL);
+
+    return code;
 }
 
 #include "main.moc"
