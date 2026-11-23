@@ -1,3 +1,98 @@
+commit 4dd1697a2ca389a4a9472db572bf3f964443672d (HEAD -> main, origin/main)
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-23 17:52:03 -0600
+
+    updates and added video
+
+ DESIGN.md | 26 +++++---------------------
+ VIDEO.md  |  2 ++
+ 2 files changed, 7 insertions(+), 21 deletions(-)
+
+commit 19edcd8097861860191fa919ad03f2350c8b0cb7
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-22 23:07:11 -0600
+
+    M5: removed polling from CR1
+
+ include/aiws/gui/ipc_server.hpp |  6 +--
+ include/aiws/ipc_protocol.hpp   | 40 +++++++++--------
+ src/ipc_server.cpp              | 50 ++++++++++++++++------
+ src/main.cpp                    | 95 ++++++++++++++++++++---------------------
+ 4 files changed, 110 insertions(+), 81 deletions(-)
+
+commit 2b9947ca7b1852a15ba2c0a4cf4dfdbcbb8469ae
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-22 08:00:09 -0600
+
+    M5: corpus lifestyle at state pattern, enum removed, fault switches added
+
+ .gitignore                        |   2 +-
+ CMakeLists.txt                    |   2 +
+ DESIGN.md                         | 128 +++++++++--------------------------
+ include/aiws/gui/corpus_phase.hpp | 139 ++++++++++++++++++++++++++++++++++++++
+ include/aiws/gui/main_window.hpp  |  33 +++++----
+ src/build_mailbox.cpp             |   5 ++
+ src/corpus_phase.cpp              |  86 +++++++++++++++++++++++
+ src/delayed_chunker.cpp           |   5 ++
+ src/main_window.cpp               | 117 +++++++++++++++++---------------
+ tests/student_tests.cpp           |  83 ++++++++++++++++++++++-
+ 10 files changed, 430 insertions(+), 170 deletions(-)
+
+commit 40af07baa5e780af90f53059cf996a3fc3acc8a3
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-20 22:12:29 -0500
+
+    M5, one build worker with mailbox and cancellation
+
+ DESIGN.md                           |  11 +-
+ Testing/Temporary/CTestCostData.txt |   1 +
+ Testing/Temporary/LastTest.log      |   3 +
+ include/aiws/delayed_chunker.hpp    |   6 +-
+ include/aiws/gui/build_job.hpp      |  39 ++++
+ include/aiws/gui/build_mailbox.hpp  |  27 +++
+ include/aiws/gui/build_worker.hpp   |  65 +++++++
+ include/aiws/gui/main_window.hpp    |  10 +-
+ src/build_mailbox.cpp               |  43 +++++
+ src/build_worker.cpp                |  70 +++++++
+ src/delayed_chunker.cpp             |  28 +--
+ src/main_window.cpp                 |  84 ++++-----
+ tests/student_tests.cpp             | 365 +++++++++++++++++++++++-------------
+ 13 files changed, 543 insertions(+), 209 deletions(-)
+
+commit 8dd4ab0cf050585bc81d31f90bb8d52b2cfa74f1
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-20 11:07:53 -0500
+
+    Added M5 worker thread files
+
+ CMakeLists.txt                     |  7 +++-
+ include/aiws/gui/build_job.hpp     |  0
+ include/aiws/gui/build_mailbox.hpp |  0
+ include/aiws/gui/build_runner.hpp  | 50 -----------------------
+ include/aiws/gui/build_worker.hpp  |  0
+ src/build_mailbox.cpp              |  0
+ src/build_runner.cpp               | 83 --------------------------------------
+ src/build_worker.cpp               |  0
+ 8 files changed, 5 insertions(+), 135 deletions(-)
+
+commit c8cfdc56d827991a643bcbef76ac632ebe5dffcd
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-20 10:19:55 -0500
+
+    M5 start: rename CMakeLists
+
+ CMakeLists.txt | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+commit 4ffceae16d1595066b2ec5ee27d98ed98ceb2362 (tag: m4-submission)
+Author: Joshua <jcokuad@vt.edu>
+Date:   2026-11-09 21:09:52 -0500
+
+    updated history
+
+ HISTORY.txt | Bin 19268 -> 9822 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
 commit 03759934773e487c9cf5b2ce444edc9c33e9b619
 Author: Joshua <jcokuad@vt.edu>
 Date:   2026-11-09 21:07:10 -0500
