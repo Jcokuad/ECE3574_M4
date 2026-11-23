@@ -8,6 +8,10 @@ Three threads. GUI thread: widgets, MainWindow, all corpus states. Build thread:
 
 Shared data: the mailbox and wanted_. It cannot be smaller: the worker needs some way to get a request while asleep (mailbox, needs a cv to wait without polling), and a running build needs some way to learn mid-build that it is useless (wanted_), which the mailbox cannot do because the worker is not reading it during a build.
 
+No thread polls: IpcServer and SIGTERM handling now wake from a self-pipe instead of
+checking a flag every 100 ms. aiws_send's 50 ms connect retry is a separate program
+waiting for the app to start, not a thread waiting for an event.
+
 ## Section (3) States:
 Mainwindow is the context, phase_ holds the current CorpusPhase, and every event calls transition(phase_->event(*this)), which returns the next state or nullptr to stay. NotBuilt, Current, Stale, and Failed all start a build when Build is clicked in the window. Building cancels then goes stale on a change or NotBuilt on reset, goes to Current or Failed on its own result, and ignores results from any other generation. Current and Failed go to stale on a change, while every other state goes to NotBuilt on a reset.
 
@@ -36,24 +40,4 @@ never wakes and Exit hangs on join, caught by idle_shutdown_is_prompt, which run
 exits after 2 s.
 
 ## Section (7) AI-use disclosure 
-AI was used for assiting with planning the CR-1 design, Implementing thorough Test Cases, and gaining a better understanding of how all the pieces fit together. AI was also used to improve the formatting of this Design.md so it is more readable and covers the planning phase that it was used for. 
-
-## Pair Programming log
-
-Partner: Simon Azumah
-
-Session 1: We started on 11/06/26 from 7:00pm to 7:45pm in person, working on Simon's code. We talked about what approach we should take for CR1 and decided who would go first as the developer. We generated ideas using the CR-1 plan, covering the message format, the server designm, and the shutdown design, which covers steps 7a to 7d. 
-Session 2: On 11/06/26 from 8:30pm to 9:00pm, we worked on my code and worked out how to adapt the steps we made into the format of my implementation.
-
-Role Swaps: Simon and I took turns talking about our plan and code was not developed in the first session.
-
-My contribution when I was navigator: I reviewed Simon's code and made two main observations:
-1. In ~MainWindow, he reset build_job before the ipc_server which did not match the shutdown order in his DESIGN.md. I also noticed that if the server is stopped first, then no new remote add can arrive when a build is being cancelled or destroyed.
-2. I also realized a difference between what the client was told and what actually happened. Even though the server replies with 'ok' after the readability check, the add itself doesn't run until later in the GUI thread. If add_document_file ever fails at that point, then that means the client was already told 'ok' and the status bar shows "Remote add failed".  
-
-Simon's contribution when he was navigator: He reviewed my code and ensured I had the three things that CR1 depends on:
-1. The Build Button: Simon ensured that my Build Corpus button was disabled when a build job exists, and not only when the state was building
-2. The Threads: He checked if anything that runs off the main thread touched a widget directly, and if results returned through a queued call.
-3. The Destructor: He checked if my destructor stops first and if a thread could outlive the objects it uses.
-
-What worked best: When we met in person and worked through code togethger, it made development more efficient that if we did it offline. Also explaining our reasoning behind decisions we made also helped to keep each other accountable and helped us to get a better understanding of the project as we worked on it. 
+AI was used for assiting with planning the project design based on the constraints, Implementing thorough Test Cases, and gaining a better understanding of how all the pieces fit together. It was also used to help compare between my designs in the building phase. It was also used to develop test cases to ensure all edge cases were covered. AI was also used to improve the formatting of this Design.md so it is more readable and covers the planning phase that it was used for. 
